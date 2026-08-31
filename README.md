@@ -11,9 +11,9 @@ the link.**
 
 - `votes` holds only `(id, election_id, candidate_id, created_at)`. No `voter_id`, no matric
   number, no name, no IP, no `election_voters` reference, no session id.
-- `election_voters` holds `has_voted` / `voted_at` per `(election, voter)` — participation, never a
+- `election_voters` holds `has_voted` / `voted_at` per `(election, voter)` - participation, never a
   choice.
-- `vote_idempotency` holds a random client key + `election_id` + timestamp — no voter, no candidate.
+- `vote_idempotency` holds a random client key + `election_id` + timestamp - no voter, no candidate.
 - `email_outbox`, `admin_audit_log`: aggregate counts and admin actions only.
 - Votes are inserted in randomised order so row id / `created_at` ordering can't hint at a ballot's
   shape.
@@ -29,7 +29,7 @@ convention.
 
 Next.js 14 (App Router, mostly Server Components) · TypeScript · pnpm · PostgreSQL on Neon,
 accessed with `@neondatabase/serverless` (its `Pool` is a drop-in for `pg.Pool` and speaks the
-Postgres protocol over a WebSocket on port 443 — raw parameterised SQL, no ORM, full interactive
+Postgres protocol over a WebSocket on port 443 - raw parameterised SQL, no ORM, full interactive
 transactions) · Redis via ioredis (rate limiting only) · Resend (admin email) · NextAuth
 Credentials (admin auth) · Zod (runtime input validation) · Vitest · GitHub Actions CI. Deploy:
 Vercel + Neon.
@@ -77,13 +77,13 @@ pnpm tsx scripts/seed.ts
 ```bash
 pnpm dev          # http://localhost:3000  (voter)  ·  /admin  (admin)
 pnpm test         # pure-logic unit tests (no DB needed)
-pnpm load-test    # concurrency check against a running server — see scripts/load-test.ts
+pnpm load-test    # concurrency check against a running server - see scripts/load-test.ts
 ```
 
 ### 6. Deploy
 
 Set **every** variable from `.env.example` in the Vercel project (Production) first; set
-`NEXTAUTH_URL` to the deployed URL. Then `vercel --prod`, and run steps 3–4 against the production
+`NEXTAUTH_URL` to the deployed URL. Then `vercel --prod`, and run steps 3 to 4 against the production
 `DATABASE_URL`. Optionally add a Vercel Cron hitting `POST /api/admin/outbox/flush` with header
 `x-cron-key: $CRON_SECRET` every few minutes to drain deferred notification emails.
 
@@ -93,7 +93,7 @@ Set **every** variable from `.env.example` in the Vercel project (Production) fi
   `pnpm test`, applies `db/schema.sql` to a throwaway Postgres 16 service (catches SQL/DDL
   regressions), then `pnpm build`. No real secrets or database are used.
 - **`.github/workflows/deploy.yml`** deploys to Vercel production on push to `main`, but only when
-  the repo secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` are set — otherwise it
+  the repo secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` are set - otherwise it
   no-ops green. It deploys **code only**: apply schema/migration changes to the production database
   yourself. (Or connect the repo in the Vercel dashboard and delete this workflow to use Vercel's
   native Git integration.)
@@ -116,11 +116,11 @@ not on that election's ballot.
 
 One transaction, one pooled connection, in order: (a) re-check the election is open using the
 **database** clock `voting_start <= now() < voting_end`; (b) `INSERT ... ON CONFLICT DO NOTHING`
-the idempotency key — a replay short-circuits as `duplicate`; (c) `UPDATE election_voters SET
-has_voted = true WHERE ... AND has_voted = false RETURNING` — the atomic one-vote claim; (d)
+the idempotency key - a replay short-circuits as `duplicate`; (c) `UPDATE election_voters SET
+has_voted = true WHERE ... AND has_voted = false RETURNING` - the atomic one-vote claim; (d)
 validate the whole ballot against the authoritative config (`lib/ballot-rules.ts`); (e) insert one
 `votes` row per selection; (f) enqueue the notification into `email_outbox`. Any business rejection
-throws `RollbackSignal`, so **nothing** — not even the idempotency key — persists and the voter can
+throws `RollbackSignal`, so **nothing** - not even the idempotency key - persists and the voter can
 retry. No HTTP call happens inside the transaction.
 
 ### 3. Concurrency strategy
@@ -133,7 +133,7 @@ for one voter and asserts exactly one is accepted.
 
 ### 4. Transaction isolation
 
-**READ COMMITTED** for the vote path — sufficient because correctness comes from the row lock, not
+**READ COMMITTED** for the vote path - sufficient because correctness comes from the row lock, not
 from isolation. `withTx` accepts a level and a bounded retry count; retries fire **only** on
 serialization failure (`40001`) and deadlock (`40P01`), with exponential backoff + jitter, capped
 at 3 attempts. Nothing else is retried.
@@ -145,7 +145,7 @@ after the server commits. The client generates one `idempotencyKey` (UUID) per v
 **reuses it on every retry**. The server records it inside the vote transaction. A resend with the
 same key returns `{ status: "recorded", duplicate: true }` without inserting anything. So the
 *request* is effectively idempotent while the *database* holds the actual one-vote invariant. We do
-not claim exactly-once execution — we claim exactly-once **effect**. The idempotency row has no
+not claim exactly-once execution - we claim exactly-once **effect**. The idempotency row has no
 voter or candidate column, so it cannot leak a choice.
 
 ### 6. Failure recovery
@@ -156,7 +156,7 @@ voter or candidate column, so it cannot leak a choice.
   ballot; the voter can retry.
 - **After commit, response lost**: the voter retries. The idempotency key (or, failing that, the
   `has_voted` claim) makes the retry a no-op that returns a safe "already recorded" outcome. The
-  UI never says the vote failed — a timeout puts it in an *"we couldn't confirm"* state with a
+  UI never says the vote failed - a timeout puts it in an *"we couldn't confirm"* state with a
   **Check vote status** action that re-runs verification.
 
 ### 7. Redis failure behaviour
@@ -170,12 +170,12 @@ outage never makes the app "not ready".
 
 Email is never inside a transaction. A recorded vote enqueues a row in `email_outbox`; delivery is
 attempted after commit and, on failure, the row stays `pending` (up to 5 attempts) for the next
-drain — triggered by the next vote, by the admin "Send results" button, or by the cron endpoint.
+drain - triggered by the next vote, by the admin "Send results" button, or by the cron endpoint.
 A Resend outage never changes the vote result or the API's "recorded" response.
 
 ### 9. Election timing enforcement
 
-The **write** path (`/api/vote/verify`, `castBallot`) decides open/closed in SQL with `now()` —
+The **write** path (`/api/vote/verify`, `castBallot`) decides open/closed in SQL with `now()` -
 `voting_start <= now() < voting_end` (closed exactly at `voting_end`). The stored `status` is admin
 intent; `effectiveStatus()` folds in the clock for **display only** and is never the sole gate on a
 mutation. Client countdowns are informational. If the window closes while a voter is on the ballot,
@@ -189,7 +189,7 @@ submission is rejected server-side with `ELECTION_CLOSED`.
 Status changes are checked against a state machine (`draft → scheduled → open → closed`, plus
 `scheduled → draft`); **a closed election can never be reopened**. Once any vote exists the ballot
 is frozen: positions/candidates cannot be added, renamed, reordered, or deleted (409
-`ELECTION_LOCKED`) — clone the election instead. A voter who has voted cannot be removed.
+`ELECTION_LOCKED`) - clone the election instead. A voter who has voted cannot be removed.
 
 ### 11. Ballot-secrecy guarantees
 
@@ -248,7 +248,7 @@ lists (registry, eligible voters, participation) are server-paginated.
   `pg_dump "$DATABASE_URL" -Fc -f nacosvote-$(date +%F).dump`.
 - **Temporary DB outage:** the app degrades (table above); no data is lost; it recovers on its own
   when Neon returns.
-- **Bad application deploy:** Vercel keeps previous immutable deployments — roll back in the
+- **Bad application deploy:** Vercel keeps previous immutable deployments - roll back in the
   dashboard or `vercel rollback`. App instances are stateless; there is nothing to migrate back.
 - **Schema changes:** add numbered files under `db/migrations/` and apply them in order; never
   hand-edit production tables. The app assumes the baseline schema exists and will surface clear
@@ -260,7 +260,7 @@ lists (registry, eligible voters, participation) are server-paginated.
 
 ## Implemented vs. deferred
 
-**Implemented:** everything above — DB constraints + trigger, atomic idempotent vote transaction,
+**Implemented:** everything above - DB constraints + trigger, atomic idempotent vote transaction,
 bounded retry/backoff, READ COMMITTED with documented rationale, hardened `pg.Pool` (timeouts, no
 client leaks, no external calls inside transactions), optimistic-concurrency admin edits, election
 state machine + frozen-ballot lock, DB-clock timing, Zod validation on every external input with a
@@ -271,7 +271,7 @@ offline detection, "couldn't confirm" recovery path, unit tests + a concurrency 
 
 **Deferred (documented, not built):** an automated DB-integration test suite (needs a throwaway
 `TEST_DATABASE_URL`; `scripts/load-test.ts` covers the concurrency invariant end-to-end today);
-CSRF tokens on admin mutations (currently: same-site auth cookie + JSON-only + method checks —
+CSRF tokens on admin mutations (currently: same-site auth cookie + JSON-only + method checks -
 adequate for this threat model, a token layer would harden it further); drag-and-drop ballot
 reordering (numeric up-arrow ordering is wired); a full Playwright pass over the 20-scenario UX
 matrix.
