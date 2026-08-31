@@ -218,3 +218,22 @@
     animation-duration: 1.6s;
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  :root,
+  :root.dark {
+    --c-paper: 255 255 255;
+    --c-surface: 255 255 255;
+    --c-ink: 20 20 20;
+    --c-line: 170 170 170;
+  }
+  body {
+    background: #fff;
+  }
+  a[href]:after {
+    content: '';
+  }
+}

@@ -1,5 +1,10 @@
 import { handle, ok } from '@/lib/api';
-import { closeExpiredElections, getOpenElections, getUpcomingElections } from '@/lib/queries';
+import {
+  closeExpiredElections,
+  getOpenElections,
+  getUpcomingElections,
+  listPublishedResultsElections,
+} from '@/lib/queries';
 import { flushOutbox } from '@/lib/email';
 import { log } from '@/lib/log';
 
@@ -20,7 +25,12 @@ export async function GET() {
       })
       .catch((err) => log.error('auto_close_failed', { requestId, err: String(err).slice(0, 200) }));
 
-    const [open, upcoming] = await Promise.all([getOpenElections(), getUpcomingElections()]);
+    const [open, upcoming, results] = await Promise.all([
+      getOpenElections(),
+      getUpcomingElections(),
+      listPublishedResultsElections(),
+    ]);
+
     return ok(
       {
         elections: open.map((e) => ({
@@ -32,6 +42,11 @@ export async function GET() {
           id: e.id,
           title: e.title,
           votingStart: e.voting_start ? new Date(e.voting_start).toISOString() : null,
+          votingEnd: e.voting_end ? new Date(e.voting_end).toISOString() : null,
+        })),
+        results: results.map((e) => ({
+          id: e.id,
+          title: e.title,
           votingEnd: e.voting_end ? new Date(e.voting_end).toISOString() : null,
         })),
       },

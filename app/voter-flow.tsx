@@ -9,6 +9,7 @@ import { Brand } from './components/brand';
 
 type OpenElection = { id: number; title: string; votingEnd: string | null };
 type UpcomingElection = { id: number; title: string; votingStart: string | null };
+type PublishedResult = { id: number; title: string; votingEnd: string | null };
 type Candidate = { id: number; name: string };
 type Position = { id: number; name: string; candidates: Candidate[] };
 type Step = 'pick' | 'identify' | 'confirm' | 'ballot' | 'done' | 'uncertain';
@@ -63,6 +64,25 @@ function UpcomingList({ upcoming }: { upcoming: UpcomingElection[] }) {
   );
 }
 
+function PublishedResultsList({ results }: { results: PublishedResult[] }) {
+  if (results.length === 0) return null;
+  return (
+    <section className="mt-8">
+      <p className="kicker">Published results</p>
+      <ul className="mt-2 border-t border-line">
+        {results.map((e) => (
+          <li key={e.id} className="border-b border-line py-3">
+            <a href={`/results/${e.id}`} className="font-serif text-base no-underline hover:underline">
+              {e.title}
+            </a>
+            {e.votingEnd && <p className="meta">Closed {fmtTime(e.votingEnd)}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function useOnline(): boolean {
   const [online, setOnline] = useState(true);
   useEffect(() => {
@@ -88,14 +108,17 @@ function newKey(): string {
 export default function VoterFlow({
   initialElections,
   initialUpcoming = [],
+  initialResults = [],
 }: {
   initialElections: OpenElection[] | null;
   initialUpcoming?: UpcomingElection[];
+  initialResults?: PublishedResult[];
 }) {
   const online = useOnline();
 
   const [elections, setElections] = useState<OpenElection[] | null>(initialElections);
   const [upcoming, setUpcoming] = useState<UpcomingElection[]>(initialUpcoming);
+  const [results, setResults] = useState<PublishedResult[]>(initialResults);
   const [loadFailed, setLoadFailed] = useState(initialElections === null);
   const [reloading, setReloading] = useState(false);
 
@@ -136,11 +159,13 @@ export default function VoterFlow({
     const res = await apiGetWithRetry<{
       elections: OpenElection[];
       upcoming: UpcomingElection[];
+      results: PublishedResult[];
     }>('/api/elections/open');
     setReloading(false);
     if (res.ok) {
       setElections(res.data.elections);
       setUpcoming(res.data.upcoming ?? []);
+      setResults(res.data.results ?? []);
       setLoadFailed(false);
       setStep(res.data.elections.length === 1 ? 'identify' : 'pick');
     } else {
@@ -351,7 +376,10 @@ export default function VoterFlow({
       )}
 
       {!loadFailed && (step === 'pick' || (elections && elections.length === 0)) && (
-        <UpcomingList upcoming={upcoming} />
+        <>
+          <UpcomingList upcoming={upcoming} />
+          <PublishedResultsList results={results} />
+        </>
       )}
 
       {step === 'identify' && chosen && (

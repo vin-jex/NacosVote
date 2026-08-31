@@ -1,4 +1,8 @@
-import { getOpenElections, getUpcomingElections } from '@/lib/queries';
+import {
+  getOpenElections,
+  getUpcomingElections,
+  listPublishedResultsElections,
+} from '@/lib/queries';
 import { log, safeError } from '@/lib/log';
 import VoterFlow from './voter-flow';
 
@@ -10,13 +14,19 @@ export type UpcomingElection = {
   votingStart: string | null;
   votingEnd: string | null;
 };
+export type PublishedResult = { id: number; title: string; votingEnd: string | null };
 
 export default async function Home() {
   let elections: { id: number; title: string; votingEnd: string | null }[] | null = null;
   let upcoming: UpcomingElection[] = [];
+  let results: PublishedResult[] = [];
 
   try {
-    const [open, up] = await Promise.all([getOpenElections(), getUpcomingElections()]);
+    const [open, up, res] = await Promise.all([
+      getOpenElections(),
+      getUpcomingElections(),
+      listPublishedResultsElections(),
+    ]);
     elections = open.map((e) => ({
       id: e.id,
       title: e.title,
@@ -28,10 +38,17 @@ export default async function Home() {
       votingStart: e.voting_start ? new Date(e.voting_start).toISOString() : null,
       votingEnd: e.voting_end ? new Date(e.voting_end).toISOString() : null,
     }));
+    results = res.map((e) => ({
+      id: e.id,
+      title: e.title,
+      votingEnd: e.voting_end ? new Date(e.voting_end).toISOString() : null,
+    }));
   } catch (err) {
     // DB unavailable: still serve the shell; the client shows a degraded state.
     log.error('home_open_elections_failed', { err: safeError(err) });
   }
 
-  return <VoterFlow initialElections={elections} initialUpcoming={upcoming} />;
+  return (
+    <VoterFlow initialElections={elections} initialUpcoming={upcoming} initialResults={results} />
+  );
 }
