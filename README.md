@@ -202,10 +202,15 @@ mutation. Client countdowns are informational. If the window closes while a vote
 submission is rejected server-side with `ELECTION_CLOSED`.
 
 `closeExpiredElections()` flips `status` to `closed` for any election past `voting_end` and queues
-its final-results email exactly once (`results_emailed_at` guard). It runs from the Vercel cron in
-`vercel.json` (`GET /api/cron/close-expired`, every 5 min) and opportunistically whenever the public
-`/api/elections/open` endpoint is hit, so an ended election finalises and emails even if the cron is
-unavailable. An admin who closes an election manually triggers the same results email.
+its final-results email exactly once (`results_emailed_at` guard). Triggers, in order of promptness:
+
+- an admin closing the election manually (immediate),
+- the admin results view polling `GET /api/admin/elections/:id/results` while an election ends,
+- any visitor loading the public `/api/elections/open` endpoint,
+- the Vercel cron in `vercel.json` (`/api/cron/close-expired`), a once-a-day backstop (the Hobby
+  plan only allows daily crons; bump to `*/5 * * * *` on Pro).
+
+All are idempotent, so whichever fires first wins and the rest are no-ops.
 
 ### 9a. Eligibility modes
 

@@ -1,7 +1,9 @@
 import { handle, ok, adminEmail, parseId, ApiError } from '@/lib/api';
 import { parseQuery, listQuerySchema } from '@/lib/validation';
-import { getElection, getResults } from '@/lib/queries';
+import { closeExpiredElections, getElection, getResults } from '@/lib/queries';
+import { flushOutbox } from '@/lib/email';
 import { effectiveStatus } from '@/lib/election';
+import { log } from '@/lib/log';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +13,12 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     await adminEmail();
     const id = parseId(params.id);
     if (!id) throw new ApiError('NOT_FOUND', 404, 'Election not found.');
+
+    // The admin polls this while an election ends; use it to auto-close + email
+    // promptly on the Hobby plan (daily cron only). Fire-and-forget.
+    void closeExpiredElections()
+      .then((closed) => (closed.length ? flushOutbox() : undefined))
+      .catch((err) => log.error('auto_close_failed', { requestId, err: String(err).slice(0, 200) }));
 
     const election = await getElection(id);
     if (!election) throw new ApiError('NOT_FOUND', 404, 'Election not found.');
