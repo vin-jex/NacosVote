@@ -8,7 +8,7 @@ const DEFAULT_TIMEOUT = 12_000;
 
 /**
  * fetch wrapper with a bounded timeout and a normalised error shape.
- * `timedOut` is true when the client gave up — the server may still have
+ * `timedOut` is true when the client gave up - the server may still have
  * processed the request, so callers on non-idempotent POSTs must treat this as
  * "unknown", never as "failed".
  */

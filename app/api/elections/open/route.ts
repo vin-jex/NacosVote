@@ -4,7 +4,7 @@ import { getOpenElections } from '@/lib/queries';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Public. Minimal fields only — id, title, close time. No counts, no config.
+// Public. Minimal fields only - id, title, close time. No counts, no config.
 export async function GET() {
   return handle('elections_open', async ({ requestId }) => {
     const elections = await getOpenElections();

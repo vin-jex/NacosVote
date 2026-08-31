@@ -693,7 +693,7 @@ export async function getResults(
 //   5. Insert one votes row per selection (a BEFORE INSERT trigger re-checks
 //      that each candidate is on this election's ballot).
 //   6. Enqueue the "vote recorded" email into the outbox (aggregate counts
-//      only — no identity, no choice).
+//      only - no identity, no choice).
 //
 // Any business rejection throws RollbackSignal, so nothing (not even the
 // idempotency key) persists and the voter can retry. No external HTTP call

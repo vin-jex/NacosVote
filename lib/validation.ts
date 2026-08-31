@@ -5,7 +5,7 @@ const MAX_BODY_BYTES = 128 * 1024;
 
 /**
  * Reads and validates a JSON request body. Rejects wrong content-type,
- * oversized payloads, malformed JSON, and anything that fails the schema —
+ * oversized payloads, malformed JSON, and anything that fails the schema -
  * all before the handler touches the database.
  */
 export async function parseJson<T>(req: Request, schema: z.ZodType<T>): Promise<T> {

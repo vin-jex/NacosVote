@@ -7,7 +7,7 @@
  *
  * Name: trimmed, internal whitespace runs collapsed to one space, lowercased.
  * So "  John   Doe " matches "John Doe". The name is a second identity factor,
- * NOT a secret — it only raises the bar for someone guessing a matric number.
+ * NOT a secret - it only raises the bar for someone guessing a matric number.
  */
 
 export function normalizeMatric(value: string): string {

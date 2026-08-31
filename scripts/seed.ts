@@ -9,7 +9,7 @@ import { normalizeMatric } from '../lib/normalize';
 //   pnpm tsx scripts/seed.ts
 //
 // Voters are upserted by matric number. Elections/positions/candidates are
-// always inserted fresh, so re-running creates duplicate elections — only run
+// always inserted fresh, so re-running creates duplicate elections - only run
 // this once, or clear the elections table first.
 // ---------------------------------------------------------------------------
 

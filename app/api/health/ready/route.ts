@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Readiness: can the app reach the things it needs? The database being down
- * makes the app "not ready" (503). Redis being down does NOT — voting stays
- * correct without it — so it is reported but never fails the check.
+ * makes the app "not ready" (503). Redis being down does NOT - voting stays
+ * correct without it - so it is reported but never fails the check.
  */
 export async function GET() {
   const [db, redis] = await Promise.all([pingDb(2_000), pingRedis(1_000)]);

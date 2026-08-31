@@ -36,7 +36,7 @@ async function electionTitle(electionId: number): Promise<string> {
 
 function renderVoteRecorded(title: string, p: VoteRecordedPayload) {
   return {
-    subject: `NacosVote: new vote recorded — ${title}`,
+    subject: `NacosVote: new vote recorded - ${title}`,
     text: `New vote recorded.\n\nElection: ${title}\nTurnout: ${p.voted} of ${p.total}`,
   };
 }
@@ -44,7 +44,7 @@ function renderVoteRecorded(title: string, p: VoteRecordedPayload) {
 function renderFinalResults(p: FinalResultsPayload) {
   const pct = p.turnout.total === 0 ? '0%' : `${((p.turnout.voted / p.turnout.total) * 100).toFixed(1)}%`;
   const lines = [
-    `${p.title} — final results`,
+    `${p.title} - final results`,
     '',
     `Voting period: ${fmt(p.votingStart)} → ${fmt(p.votingEnd)}`,
     `Turnout: ${p.turnout.voted} of ${p.turnout.total} (${pct})`,
@@ -55,7 +55,7 @@ function renderFinalResults(p: FinalResultsPayload) {
     for (const c of pos.candidates) lines.push(`  ${c.name}: ${c.votes}`);
     lines.push('');
   }
-  return { subject: `NacosVote: final results — ${p.title}`, text: lines.join('\n') };
+  return { subject: `NacosVote: final results - ${p.title}`, text: lines.join('\n') };
 }
 
 /**

@@ -23,7 +23,7 @@ if (!globalForRedis._nacosRedis) {
 
 // Per-instance fallback used only when Redis is unreachable. It is best-effort
 // (Vercel runs many instances) but still blunts a burst against one instance and,
-// crucially, CANNOT affect vote correctness — that lives entirely in Postgres.
+// crucially, CANNOT affect vote correctness - that lives entirely in Postgres.
 function fallbackLimiter(): Map<string, { count: number; resetAt: number }> {
   if (!globalForRedis._nacosFallback) globalForRedis._nacosFallback = new Map();
   return globalForRedis._nacosFallback;
@@ -45,7 +45,7 @@ function fallbackAllow(key: string, limit: number, windowSec: number): boolean {
 /**
  * Fixed-window rate limit via atomic INCR + EXPIRE. Returns true when the
  * request is within the limit. On any Redis failure it degrades to the
- * per-instance fallback and logs — it never throws and never blocks voting.
+ * per-instance fallback and logs - it never throws and never blocks voting.
  */
 export async function rateLimit(key: string, limit = 10, windowSec = 60): Promise<boolean> {
   const redisKey = `nacosvote:rl:${key}`;

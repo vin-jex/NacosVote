@@ -12,7 +12,7 @@ export type ElectionTiming = {
  * semantics: voting_start <= now < voting_end (closed exactly at voting_end).
  *
  * NOTE: the authoritative open/closed check on the WRITE path (verify/submit) is
- * done in SQL with the database clock — see getElectionForVoting / castBallot.
+ * done in SQL with the database clock - see getElectionForVoting / castBallot.
  * This helper is for display and must not be the sole gate on a mutation.
  */
 export function effectiveStatus(e: ElectionTiming, now: Date = new Date()): ElectionStatus {

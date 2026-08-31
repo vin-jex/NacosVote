@@ -7,7 +7,7 @@ type Level = 'info' | 'warn' | 'error';
  *
  * NEVER pass ballot selections, and never pass a voter identifier and a
  * candidate identifier in the same event. Matric numbers and full names should
- * not be logged either — pass a hashed/opaque marker if correlation is needed.
+ * not be logged either - pass a hashed/opaque marker if correlation is needed.
  */
 function emit(level: Level, event: string, fields: Record<string, unknown> = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), level, event, ...fields });
