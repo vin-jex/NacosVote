@@ -16,11 +16,20 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     if (!election) throw new ApiError('NOT_FOUND', 404, 'Election not found.');
 
     const { q, limit, offset } = parseQuery(req, listQuerySchema);
-    const { positions, turnout, voters, participationTotal } = await getResults(id, {
+    const raw = await getResults(id, {
       search: q,
       limit: limit ?? 50,
       offset: offset ?? 0,
     });
+    const { positions, voters, participationTotal } = raw;
+
+    // In open mode there is no fixed electorate: the denominator is the cap if
+    // one is set, otherwise just the ballots cast.
+    const denominator =
+      election.eligibility_mode === 'open'
+        ? (election.max_voters ?? raw.turnout.voted)
+        : raw.turnout.total;
+    const turnout = { voted: raw.turnout.voted, total: denominator };
     const percent = turnout.total === 0 ? 0 : (turnout.voted / turnout.total) * 100;
 
     return ok(
@@ -30,6 +39,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
           title: election.title,
           status: election.status,
           effectiveStatus: effectiveStatus(election),
+          eligibilityMode: election.eligibility_mode,
+          maxVoters: election.max_voters,
           votingStart: election.voting_start ? new Date(election.voting_start).toISOString() : null,
           votingEnd: election.voting_end ? new Date(election.voting_end).toISOString() : null,
         },

@@ -201,6 +201,26 @@ intent; `effectiveStatus()` folds in the clock for **display only** and is never
 mutation. Client countdowns are informational. If the window closes while a voter is on the ballot,
 submission is rejected server-side with `ELECTION_CLOSED`.
 
+`closeExpiredElections()` flips `status` to `closed` for any election past `voting_end` and queues
+its final-results email exactly once (`results_emailed_at` guard). It runs from the Vercel cron in
+`vercel.json` (`GET /api/cron/close-expired`, every 5 min) and opportunistically whenever the public
+`/api/elections/open` endpoint is hit, so an ended election finalises and emails even if the cron is
+unavailable. An admin who closes an election manually triggers the same results email.
+
+### 9a. Eligibility modes
+
+Each election is `restricted` (default) or `open`:
+
+- **restricted**: only voters on `election_voters` may vote; the admin loads that list (registry
+  pick or `matric,name` CSV). Verify checks the voter is on the list and the name matches.
+- **open**: no list. Anyone giving a matric number + full name may vote. The matric is registered
+  on first use and the name is **locked** to it; later attempts must match. Identity is recorded
+  (in `voters` / `election_voters`) for audit, but never joined to a `votes` row.
+
+`max_voters` (optional) caps the number of **ballots cast**. When set, the vote transaction takes a
+per-election advisory lock (`pg_advisory_xact_lock`) so the cap is exact under concurrency; the
+one-vote guarantee still comes from the conditional `UPDATE`, not the lock.
+
 ### 10. Admin concurrency control
 
 `elections.version` is optimistic-lock. `GET` returns it; `PATCH` requires it and runs

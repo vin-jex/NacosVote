@@ -3,13 +3,16 @@ import { parseJson, patchElectionSchema } from '@/lib/validation';
 import {
   deleteElection,
   electionHasVotes,
+  enqueueFinalResults,
   getElection,
   getElectionBallot,
   getTurnout,
   updateElection,
 } from '@/lib/queries';
 import { canTransition, effectiveStatus, transitionError } from '@/lib/election';
+import { flushOutbox } from '@/lib/email';
 import { logAdminAction } from '@/lib/audit';
+import { log } from '@/lib/log';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,6 +46,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         updatedAt: new Date(election.updated_at).toISOString(),
         ballotEditable: (election.status === 'draft' || election.status === 'scheduled') && !hasVotes,
         hasVotes,
+        eligibilityMode: election.eligibility_mode,
+        maxVoters: election.max_voters,
+        ballotsCast: turnout.voted,
         ballot,
         turnout,
       },
@@ -66,6 +72,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (body.description !== undefined) patch.description = body.description;
     if (body.votingStart !== undefined) patch.voting_start = body.votingStart ?? null;
     if (body.votingEnd !== undefined) patch.voting_end = body.votingEnd ?? null;
+    if (body.eligibilityMode !== undefined) patch.eligibility_mode = body.eligibilityMode;
+    if (body.maxVoters !== undefined) patch.max_voters = body.maxVoters ?? null;
 
     if (body.status !== undefined && body.status !== current.status) {
       if (!canTransition(current.status, body.status)) {
@@ -105,6 +113,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       electionId: id,
       fields: Object.keys(patch),
     });
+
+    // Auto-send results when an admin closes the election (once).
+    if (patch.status === 'closed') {
+      try {
+        await enqueueFinalResults(id);
+        void flushOutbox().catch((err) =>
+          log.error('auto_results_flush_failed', { requestId, err: String(err).slice(0, 200) }),
+        );
+      } catch (err) {
+        log.error('auto_results_enqueue_failed', { requestId, err: String(err).slice(0, 200) });
+      }
+    }
+
     return ok({ ok: true, version: result.election.version }, { requestId });
   });
 }

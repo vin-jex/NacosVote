@@ -2,12 +2,11 @@ import { handle, fail, ok } from '@/lib/api';
 import { rateLimit } from '@/lib/redis';
 import { parseJson, verifySchema } from '@/lib/validation';
 import {
-  findVoterByMatric,
   getElectionForVoting,
   getElectionBallot,
-  getParticipation,
+  getParticipationByMatric,
 } from '@/lib/queries';
-import { namesMatch } from '@/lib/normalize';
+import { namesMatch, normalizeMatric } from '@/lib/normalize';
 import { log } from '@/lib/log';
 
 export const runtime = 'nodejs';
@@ -34,21 +33,38 @@ export async function POST(req: Request) {
       return ok({ status: 'not-open' }, { requestId });
     }
 
-    // Uniform responses from here on to limit voter enumeration.
-    const voter = await findVoterByMatric(body.matricNumber);
-    if (!voter || !namesMatch(voter.name, body.name)) {
-      return ok({ status: 'not-eligible' }, { requestId });
+    // Responses are deliberately uniform to limit voter enumeration.
+    const seen = await getParticipationByMatric(body.electionId, body.matricNumber);
+
+    if (election.eligibility_mode === 'restricted') {
+      // Must be a known voter, on this election's list, name matching, not voted.
+      if (!seen || !namesMatch(seen.registered_name, body.name)) {
+        return ok({ status: 'not-eligible' }, { requestId });
+      }
+      if (seen.has_voted) return ok({ status: 'already-voted' }, { requestId });
+    } else {
+      // open: anyone with a matric + name. If the matric is already registered,
+      // the name must match the one it was first registered with.
+      if (seen && !namesMatch(seen.registered_name, body.name)) {
+        return ok({ status: 'not-eligible' }, { requestId });
+      }
+      if (seen?.has_voted) return ok({ status: 'already-voted' }, { requestId });
+      const alreadyIn = !!seen; // registered for this election but not yet voted
+      if (
+        !alreadyIn &&
+        election.max_voters != null &&
+        election.ballots_cast >= election.max_voters
+      ) {
+        return ok({ status: 'capacity-full' }, { requestId });
+      }
     }
 
-    const participation = await getParticipation(body.electionId, voter.id);
-    if (!participation) return ok({ status: 'not-eligible' }, { requestId });
-    if (participation.has_voted) return ok({ status: 'already-voted' }, { requestId });
-
+    const displayName = seen?.registered_name ?? body.name.trim();
     const ballot = await getElectionBallot(body.electionId);
     return ok(
       {
         status: 'ok',
-        voter: { name: voter.name, matricNumber: voter.matric_number },
+        voter: { name: displayName, matricNumber: normalizeMatric(body.matricNumber) },
         election: {
           id: body.electionId,
           title: election.title,

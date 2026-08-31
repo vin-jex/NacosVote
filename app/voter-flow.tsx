@@ -143,6 +143,8 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
       setError('A vote has already been recorded for this voter in this election.');
     } else if (data.status === 'not-open') {
       setError('This election is not open for voting right now.');
+    } else if (data.status === 'capacity-full') {
+      setError('Voting for this election is full. The maximum number of ballots has been reached.');
     } else {
       setError('We could not verify you for this election. Check your matric number and full name.');
     }
@@ -179,6 +181,14 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
     }
     if (!res.ok && res.status === 409 && res.code === 'ALREADY_VOTED') {
       setStep('done');
+      return;
+    }
+    if (!res.ok && res.code === 'CAPACITY_FULL') {
+      setError('Voting for this election is full. The maximum number of ballots has been reached.');
+      return;
+    }
+    if (!res.ok && res.code === 'NOT_ELIGIBLE') {
+      setError('We could not verify your details for this election.');
       return;
     }
     if (!res.ok && res.status === 403) {
