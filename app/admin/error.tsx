@@ -3,11 +3,11 @@
 export default function AdminError({ reset }: { error: Error; reset: () => void }) {
   return (
     <main>
-      <div className="state state-error" role="alert">
-        <p className="state-title">This section couldn&apos;t load</p>
-        <p className="muted">A dependency may be temporarily unavailable.</p>
-        <button className="secondary" onClick={reset}>
-          Try again
+      <div className="msg-error" role="alert">
+        <p className="msg-title">This section could not load</p>
+        <p className="mt-1 text-ink/75">A dependency may be temporarily unavailable.</p>
+        <button className="btn-secondary mt-3" onClick={reset}>
+          <span>Try again</span>
         </button>
       </div>
     </main>

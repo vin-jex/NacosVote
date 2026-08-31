@@ -9,8 +9,8 @@ import {
   RefreshNote,
   SkeletonCard,
   SkeletonRows,
-  Spinner,
 } from '@/app/components/states';
+import { Button, MessageBlock, StatusBadge } from '@/app/components/ui';
 
 type Candidate = { id: number; name: string };
 type Position = { id: number; name: string; candidates: Candidate[] };
@@ -31,7 +31,9 @@ type Detail = {
 type Tab = 'settings' | 'ballot' | 'voters' | 'results';
 
 function fmt(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  return iso
+    ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Not set';
 }
 function toLocalInput(iso: string | null): string {
   if (!iso) return '';
@@ -52,6 +54,17 @@ function useToast() {
     err: (text: string) => setToast({ kind: 'err', text }),
   };
 }
+function Toast({ toast }: { toast: { kind: 'ok' | 'err'; text: string } | null }) {
+  if (!toast) return null;
+  return (
+    <p
+      className={`mt-4 text-sm font-semibold ${toast.kind === 'ok' ? 'text-accent' : 'text-danger'}`}
+      role="status"
+    >
+      {toast.text}
+    </p>
+  );
+}
 
 export default function ElectionDetail({ electionId }: { electionId: number }) {
   const [tab, setTab] = useState<Tab>('settings');
@@ -69,58 +82,62 @@ export default function ElectionDetail({ electionId }: { electionId: number }) {
   }
   if (error || !data) {
     return (
-      <ErrorState
-        title="Unable to load this election"
-        message={error?.message}
-        onRetry={reload}
-      />
+      <ErrorState title="Unable to load this election" message={error?.message} onRetry={reload} />
     );
   }
 
   return (
     <>
-      <div className="row between">
-        <h1>{data.title}</h1>
-        <span className={`pill ${data.effectiveStatus}`}>{data.effectiveStatus}</span>
-      </div>
-      <StatusBanner detail={data} />
-      <RefreshNote refreshing={refreshing} error={null} onRetry={reload} />
-
-      <div className="tabs" role="tablist">
-        {(['settings', 'ballot', 'voters', 'results'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            className={`tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t === 'ballot' ? 'Positions & candidates' : t === 'voters' ? 'Eligible voters' : t}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+        <h1 className="page-title">{data.title}</h1>
+        <StatusBadge status={data.effectiveStatus} />
       </div>
 
-      {tab === 'settings' && <SettingsTab detail={data} reload={reload} />}
-      {tab === 'ballot' && <BallotTab detail={data} reload={reload} />}
-      {tab === 'voters' && <VotersTab electionId={electionId} status={data.status} reload={reload} />}
-      {tab === 'results' && <ResultsTab electionId={electionId} />}
+      <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-1 text-sm text-ink/70">
+        <div>
+          <dt className="inline font-semibold text-ink/60">Window: </dt>
+          <dd className="inline">
+            {fmt(data.votingStart)} to {fmt(data.votingEnd)}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline font-semibold text-ink/60">Voted: </dt>
+          <dd className="inline tabular-nums">
+            {data.turnout.voted} of {data.turnout.total}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 border-b border-line">
+        <RefreshNote refreshing={refreshing} error={null} onRetry={reload} />
+        <div className="-mb-px flex flex-wrap gap-1" role="tablist">
+          {(['settings', 'ballot', 'voters', 'results'] as Tab[]).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`min-h-[40px] rounded-t px-3 text-sm font-semibold capitalize transition-colors ${
+                tab === t
+                  ? 'border-b-2 border-accent text-ink'
+                  : 'text-ink/55 hover:bg-ink/5'
+              }`}
+            >
+              {t === 'ballot' ? 'Positions & candidates' : t === 'voters' ? 'Eligible voters' : t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        {tab === 'settings' && <SettingsTab detail={data} reload={reload} />}
+        {tab === 'ballot' && <BallotTab detail={data} reload={reload} />}
+        {tab === 'voters' && (
+          <VotersTab electionId={electionId} status={data.status} reload={reload} />
+        )}
+        {tab === 'results' && <ResultsTab electionId={electionId} />}
+      </div>
     </>
-  );
-}
-
-function StatusBanner({ detail }: { detail: Detail }) {
-  const s = detail.effectiveStatus;
-  const cls = s === 'open' ? 'open' : s === 'closed' ? 'closed' : 'wait';
-  return (
-    <div className={`banner ${cls}`} role="status">
-      <strong>{s.toUpperCase()}</strong>
-      <div>
-        {fmt(detail.votingStart)} → {fmt(detail.votingEnd)}
-      </div>
-      <div>
-        {detail.turnout.voted} / {detail.turnout.total} voters have voted
-      </div>
-    </div>
   );
 }
 
@@ -143,7 +160,7 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
       ok('Saved.');
       reload();
     } else if (res.status === 409 && res.code === 'STALE_VERSION') {
-      err('Someone else changed this election. Reloading the latest version…');
+      err('Someone else changed this election. Reloading the latest version.');
       reload();
     } else {
       err(res.message);
@@ -158,19 +175,68 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
   }
 
   return (
-    <div className="card">
-      <label>Title</label>
-      <input value={title} onChange={(e) => setTitle(e.target.value)} />
-      <label>Description</label>
-      <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-      <label>Voting start</label>
-      <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
-      <label>Voting end</label>
-      <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+    <div>
+      <p className="position-title">Election details</p>
+      <hr className="rule mb-5 mt-2" />
 
-      <div className="row">
-        <button
-          disabled={busy}
+      <div className="mb-4">
+        <label htmlFor="s-title" className="field-label">
+          Title
+        </label>
+        <input
+          id="s-title"
+          className="field-input"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </div>
+      <div className="mb-4">
+        <label htmlFor="s-desc" className="field-label">
+          Description
+        </label>
+        <textarea
+          id="s-desc"
+          className="field-input"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+        />
+      </div>
+
+      <p className="position-title mt-8">Voting period</p>
+      <hr className="rule mb-5 mt-2" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="s-start" className="field-label">
+            Start
+          </label>
+          <input
+            id="s-start"
+            type="datetime-local"
+            className="field-input"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="s-end" className="field-label">
+            End
+          </label>
+          <input
+            id="s-end"
+            type="datetime-local"
+            className="field-input"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <hr className="rule my-6" />
+
+      <div className="flex flex-wrap gap-3">
+        <Button
+          loading={busy}
           onClick={() =>
             patch({
               title: title.trim(),
@@ -180,35 +246,34 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
             })
           }
         >
-          {busy ? <Spinner label="Saving" /> : null}
-          <span>Save settings</span>
-        </button>
+          Save settings
+        </Button>
         {(detail.status === 'draft' || detail.status === 'scheduled') && (
-          <button className="secondary" disabled={busy} onClick={() => patch({ status: 'scheduled' })}>
+          <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'scheduled' })}>
             Mark scheduled
-          </button>
+          </Button>
         )}
         {detail.status !== 'closed' && (
-          <button className="secondary" disabled={busy} onClick={() => patch({ status: 'open' })}>
+          <Button variant="secondary" disabled={busy} onClick={() => patch({ status: 'open' })}>
             Open now
-          </button>
+          </Button>
         )}
         {(detail.status === 'open' || detail.status === 'scheduled') && (
-          <button className="secondary" disabled={busy} onClick={() => patch({ status: 'closed' })}>
+          <Button variant="danger" disabled={busy} onClick={() => patch({ status: 'closed' })}>
             Close now
-          </button>
+          </Button>
         )}
         {detail.status === 'draft' && (
-          <button className="secondary danger" disabled={busy} onClick={remove}>
+          <Button variant="danger" disabled={busy} onClick={remove}>
             Delete draft
-          </button>
+          </Button>
         )}
       </div>
-      <p className="muted">
+      <p className="field-hint">
         A closed election cannot be reopened. The server decides &quot;open&quot; from status plus the
         current time being inside the window.
       </p>
-      {toast && <p className={toast.kind === 'ok' ? 'ok' : 'error'}>{toast.text}</p>}
+      <Toast toast={toast} />
     </div>
   );
 }
@@ -233,23 +298,29 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
   return (
     <div>
       {locked && (
-        <div className="banner wait" role="status">
-          The ballot is frozen{detail.hasVotes ? ' because votes have been cast' : ''}. Clone the
-          election to change positions or candidates.
+        <div className="mb-5">
+          <MessageBlock variant="warn" title="The ballot is frozen">
+            {detail.hasVotes
+              ? 'Votes have been cast, so positions and candidates can no longer change. Clone the election if you need a different ballot.'
+              : 'Positions and candidates can only be edited while the election is a draft or scheduled.'}
+          </MessageBlock>
         </div>
       )}
 
       {!locked && (
-        <div className="card">
-          <label htmlFor="np">Add a position</label>
-          <div className="row">
+        <div className="mb-6">
+          <label htmlFor="np" className="field-label">
+            Add a position
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row">
             <input
               id="np"
+              className="field-input"
               value={newPosition}
               onChange={(e) => setNewPosition(e.target.value)}
-              placeholder="e.g. President"
+              placeholder="For example: President"
             />
-            <button
+            <Button
               disabled={!newPosition.trim()}
               onClick={() => {
                 run(
@@ -262,7 +333,7 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
               }}
             >
               Add position
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -275,11 +346,13 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
       )}
 
       {detail.ballot.map((p, idx) => (
-        <div className="card" key={p.id}>
-          <div className="row between">
+        <section key={p.id} className="border-t border-line py-5">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               defaultValue={p.name}
               disabled={locked}
+              aria-label="Position name"
+              className="field-input flex-1"
               onBlur={(e) => {
                 if (!locked && e.target.value.trim() && e.target.value !== p.name) {
                   run(
@@ -292,11 +365,10 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
               }}
             />
             {!locked && (
-              <div className="row">
+              <div className="flex gap-2">
                 <button
-                  className="secondary"
+                  className="btn-secondary min-h-[40px] px-3"
                   disabled={idx === 0}
-                  title="Move up"
                   onClick={() =>
                     run(
                       apiFetch(`${base}/positions/${p.id}`, {
@@ -306,27 +378,29 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
                     )
                   }
                 >
-                  ↑
+                  <span>Move up</span>
                 </button>
                 <button
-                  className="secondary danger"
+                  className="btn-danger min-h-[40px] px-3"
                   onClick={() => run(apiFetch(`${base}/positions/${p.id}`, { method: 'DELETE' }))}
                 >
-                  Remove
+                  <span>Remove</span>
                 </button>
               </div>
             )}
           </div>
 
           {p.candidates.length === 0 && (
-            <p className="muted">No candidates added for this position.</p>
+            <p className="meta mt-3">No candidates added for this position.</p>
           )}
-          <ul className="candlist">
+          <ul className="mt-3 divide-y divide-line">
             {p.candidates.map((c) => (
-              <li key={c.id} className="row between">
+              <li key={c.id} className="flex items-center gap-3 py-2">
                 <input
                   defaultValue={c.name}
                   disabled={locked}
+                  aria-label="Candidate name"
+                  className="field-input min-h-[38px] flex-1 py-1.5"
                   onBlur={(e) => {
                     if (!locked && e.target.value.trim() && e.target.value !== c.name) {
                       run(
@@ -340,10 +414,12 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
                 />
                 {!locked && (
                   <button
-                    className="secondary danger"
-                    onClick={() => run(apiFetch(`${base}/candidates/${c.id}`, { method: 'DELETE' }))}
+                    className="btn-danger min-h-[38px] px-3"
+                    onClick={() =>
+                      run(apiFetch(`${base}/candidates/${c.id}`, { method: 'DELETE' }))
+                    }
                   >
-                    ✕
+                    <span>Remove</span>
                   </button>
                 )}
               </li>
@@ -351,13 +427,15 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
           </ul>
 
           {!locked && (
-            <div className="row">
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
               <input
+                className="field-input"
                 value={candidateDraft[p.id] ?? ''}
                 onChange={(e) => setCandidateDraft((d) => ({ ...d, [p.id]: e.target.value }))}
                 placeholder="Add candidate name"
               />
-              <button
+              <Button
+                variant="secondary"
                 disabled={!(candidateDraft[p.id] ?? '').trim()}
                 onClick={() => {
                   run(
@@ -372,13 +450,13 @@ function BallotTab({ detail, reload }: { detail: Detail; reload: () => void }) {
                   setCandidateDraft((d) => ({ ...d, [p.id]: '' }));
                 }}
               >
-                Add
-              </button>
+                Add candidate
+              </Button>
             </div>
           )}
-        </div>
+        </section>
       ))}
-      {toast && <p className={toast.kind === 'ok' ? 'ok' : 'error'}>{toast.text}</p>}
+      <Toast toast={toast} />
     </div>
   );
 }
@@ -400,9 +478,9 @@ function VotersTab({
   const [offset, setOffset] = useState(0);
   const [csv, setCsv] = useState('');
   const [registryQ, setRegistryQ] = useState('');
-  const [registry, setRegistry] = useState<{ id: number; matricNumber: string; name: string }[] | null>(
-    null,
-  );
+  const [registry, setRegistry] = useState<
+    { id: number; matricNumber: string; name: string }[] | null
+  >(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -418,7 +496,13 @@ function VotersTab({
     return `/api/admin/elections/${electionId}/voters?${p.toString()}`;
   }, [electionId, debouncedQ, offset]);
 
-  const { data, error, loading, refreshing, reload: reloadVoters } = useResource<{
+  const {
+    data,
+    error,
+    loading,
+    refreshing,
+    reload: reloadVoters,
+  } = useResource<{
     eligible: number;
     voted: number;
     notVoted: number;
@@ -445,7 +529,9 @@ function VotersTab({
       { method: 'POST', body: JSON.stringify(body) },
     );
     if (res.ok) {
-      ok(`Added ${res.data.added}${res.data.createdVoters ? ` (${res.data.createdVoters} new)` : ''}.`);
+      ok(
+        `Added ${res.data.added}${res.data.createdVoters ? ` (${res.data.createdVoters} new)` : ''}.`,
+      );
       refreshAll();
     } else {
       err(res.message);
@@ -466,135 +552,145 @@ function VotersTab({
 
   return (
     <div>
-      <div className="card">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         {loading && !data ? (
           <SkeletonCard lines={1} />
         ) : error && !data ? (
           <ErrorState title="Unable to load voters" message={error.message} onRetry={reloadVoters} />
         ) : data ? (
-          <div className="row between">
-            <p className="big">
-              {data.eligible} eligible · {data.voted} voted · {data.notVoted} not yet
+          <>
+            <p className="text-lg font-semibold tabular-nums">
+              {data.eligible} eligible, {data.voted} voted, {data.notVoted} not yet
             </p>
             <RefreshNote refreshing={refreshing} error={error} onRetry={reloadVoters} />
-          </div>
+          </>
         ) : null}
       </div>
 
       {status !== 'closed' && (
         <>
-          <div className="card">
-            <label htmlFor="rq">Add from voter registry</label>
-            <div className="row">
-              <input
-                id="rq"
-                value={registryQ}
-                onChange={(e) => setRegistryQ(e.target.value)}
-                placeholder="Search name or matric"
-              />
-              <button className="secondary" onClick={searchRegistry}>
-                Search
-              </button>
-            </div>
-            {registry && registry.length === 0 && (
-              <p className="muted">No matching registry entries.</p>
-            )}
-            {registry && registry.length > 0 && (
-              <>
-                <button onClick={() => post({ voterIds: registry.map((r) => r.id) })}>
-                  Add all {registry.length} shown
-                </button>
-                <ul className="candlist">
-                  {registry.map((r) => (
-                    <li key={r.id} className="row between">
-                      <span>
-                        {r.name} <span className="muted">({r.matricNumber})</span>
-                      </span>
-                      <button className="secondary" onClick={() => post({ voterIds: [r.id] })}>
-                        Add
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-
-          <div className="card">
-            <label htmlFor="csv">Bulk import — one per line: matric,name</label>
-            <textarea
-              id="csv"
-              value={csv}
-              onChange={(e) => setCsv(e.target.value)}
-              rows={4}
-              placeholder={'CSC/2023/001,John Doe\nCSC/2023/002,Jane Doe'}
+          <p className="position-title mt-8">Add from voter registry</p>
+          <hr className="rule mb-4 mt-2" />
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              id="rq"
+              className="field-input"
+              value={registryQ}
+              onChange={(e) => setRegistryQ(e.target.value)}
+              placeholder="Search name or matric number"
             />
-            <button disabled={!csv.trim()} onClick={() => post({ csv })}>
-              Import
-            </button>
-            <p className="muted">Adds to the list; never removes existing voters. The whole file is rejected if any row is malformed.</p>
+            <Button variant="secondary" onClick={searchRegistry}>
+              Search
+            </Button>
           </div>
+          {registry && registry.length === 0 && (
+            <p className="meta mt-3">No matching registry entries.</p>
+          )}
+          {registry && registry.length > 0 && (
+            <div className="mt-3">
+              <Button onClick={() => post({ voterIds: registry.map((r) => r.id) })}>
+                Add all {registry.length} shown
+              </Button>
+              <ul className="mt-2 divide-y divide-line">
+                {registry.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <span>
+                      {r.name} <span className="text-ink/55">({r.matricNumber})</span>
+                    </span>
+                    <button
+                      className="btn-secondary min-h-[36px] px-3"
+                      onClick={() => post({ voterIds: [r.id] })}
+                    >
+                      <span>Add</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="position-title mt-8">Bulk import</p>
+          <hr className="rule mb-4 mt-2" />
+          <label htmlFor="csv" className="field-label">
+            One voter per line: matric number, then a comma, then the name
+          </label>
+          <textarea
+            id="csv"
+            className="field-input"
+            value={csv}
+            onChange={(e) => setCsv(e.target.value)}
+            rows={4}
+            placeholder={'CSC/2023/001,John Doe\nCSC/2023/002,Jane Doe'}
+          />
+          <div className="mt-3">
+            <Button variant="secondary" disabled={!csv.trim()} onClick={() => post({ csv })}>
+              Import
+            </Button>
+          </div>
+          <p className="field-hint">
+            Adds to the list and never removes existing voters. The whole file is rejected if any row
+            is malformed.
+          </p>
         </>
       )}
 
-      <div className="card">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Filter eligible voters"
-          aria-label="Filter eligible voters"
+      <p className="position-title mt-8">Eligible voters</p>
+      <hr className="rule mb-4 mt-2" />
+      <input
+        className="field-input mb-4"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Filter eligible voters"
+        aria-label="Filter eligible voters"
+      />
+      {loading && !data ? (
+        <SkeletonRows rows={6} cols={4} />
+      ) : data && data.voters.length === 0 ? (
+        <EmptyState
+          title={debouncedQ ? 'No voters found' : 'No eligible voters yet'}
+          message={
+            debouncedQ
+              ? 'Try a different matric number or name.'
+              : 'Add voters to this election before opening it.'
+          }
         />
-        {loading && !data ? (
-          <SkeletonRows rows={6} cols={4} />
-        ) : data && data.voters.length === 0 ? (
-          <EmptyState
-            title={debouncedQ ? 'No voters found' : 'No eligible voters yet'}
-            message={
-              debouncedQ
-                ? 'Try a different matric number or name.'
-                : 'Add voters to this election before opening it.'
-            }
-          />
-        ) : data ? (
-          <>
-            <div className="table-scroll">
-              <table className="voters">
-                <thead>
-                  <tr>
-                    <th>Matric</th>
-                    <th>Name</th>
-                    <th>Voted</th>
-                    <th></th>
+      ) : data ? (
+        <>
+          <div className="table-scroll">
+            <table className="w-full border-t border-line text-sm">
+              <thead>
+                <tr className="text-left text-ink/60">
+                  <th className="py-2 pr-3 font-semibold">Matric</th>
+                  <th className="py-2 pr-3 font-semibold">Name</th>
+                  <th className="py-2 pr-3 font-semibold">Voted</th>
+                  <th className="py-2 font-semibold"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.voters.map((v) => (
+                  <tr key={v.id} className="border-t border-line">
+                    <td className="py-2 pr-3">{v.matricNumber}</td>
+                    <td className="py-2 pr-3">{v.name}</td>
+                    <td className="py-2 pr-3">{v.voted ? 'Yes' : 'No'}</td>
+                    <td className="py-2 text-right">
+                      {!v.voted && status !== 'closed' && (
+                        <button
+                          className="btn-danger min-h-[34px] px-2.5"
+                          onClick={() => removeVoter(v.id)}
+                        >
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {data.voters.map((v) => (
-                    <tr key={v.id}>
-                      <td>{v.matricNumber}</td>
-                      <td>{v.name}</td>
-                      <td>{v.voted ? 'yes' : 'no'}</td>
-                      <td>
-                        {!v.voted && status !== 'closed' && (
-                          <button className="secondary danger" onClick={() => removeVoter(v.id)}>
-                            remove
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              offset={offset}
-              page={PAGE}
-              total={data.matched}
-              onPage={setOffset}
-            />
-          </>
-        ) : null}
-      </div>
-      {toast && <p className={toast.kind === 'ok' ? 'ok' : 'error'}>{toast.text}</p>}
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager offset={offset} page={PAGE} total={data.matched} onPage={setOffset} />
+        </>
+      ) : null}
+      <Toast toast={toast} />
     </div>
   );
 }
@@ -614,16 +710,24 @@ function Pager({
   const from = total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + page, total);
   return (
-    <div className="row between">
-      <span className="muted">
-        {from}–{to} of {total}
+    <div className="mt-4 flex items-center justify-between">
+      <span className="meta tabular-nums">
+        {from} to {to} of {total}
       </span>
-      <div className="row">
-        <button className="secondary" disabled={offset === 0} onClick={() => onPage(Math.max(0, offset - page))}>
-          Prev
+      <div className="flex gap-2">
+        <button
+          className="btn-secondary min-h-[36px] px-3"
+          disabled={offset === 0}
+          onClick={() => onPage(Math.max(0, offset - page))}
+        >
+          <span>Previous</span>
         </button>
-        <button className="secondary" disabled={to >= total} onClick={() => onPage(offset + page)}>
-          Next
+        <button
+          className="btn-secondary min-h-[36px] px-3"
+          disabled={to >= total}
+          onClick={() => onPage(offset + page)}
+        >
+          <span>Next</span>
         </button>
       </div>
     </div>
@@ -635,7 +739,11 @@ function ResultsTab({ electionId }: { electionId: number }) {
   const [offset, setOffset] = useState(0);
   const url = `/api/admin/elections/${electionId}/results?limit=${PAGE}&offset=${offset}`;
   const { data, error, loading, refreshing, reload } = useResource<{
-    positions: { id: number; name: string; candidates: { id: number; name: string; votes: number }[] }[];
+    positions: {
+      id: number;
+      name: string;
+      candidates: { id: number; name: string; votes: number }[];
+    }[];
     turnout: { voted: number; total: number; notVoted: number; percent: number };
     participation: {
       total: number;
@@ -673,78 +781,79 @@ function ResultsTab({ electionId }: { electionId: number }) {
 
   return (
     <div>
-      <div className="card">
-        <div className="row between">
-          <div>
-            <p className="big">
-              Turnout: {data.turnout.voted} / {data.turnout.total} ({data.turnout.percent.toFixed(1)}%)
-            </p>
-            <p className="muted">{data.turnout.notVoted} eligible voters have not voted.</p>
-          </div>
-          <RefreshNote refreshing={refreshing} error={error} onRetry={reload} />
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <p className="kicker">Turnout</p>
+          <p className="mt-1 font-serif text-2xl tabular-nums">
+            {data.turnout.voted} of {data.turnout.total}
+          </p>
+          <p className="meta tabular-nums">
+            {data.turnout.percent.toFixed(1)}% voted. {data.turnout.notVoted} have not voted.
+          </p>
         </div>
+        <RefreshNote refreshing={refreshing} error={error} onRetry={reload} />
       </div>
+
+      <p className="position-title mt-8">Results</p>
+      <hr className="rule mb-2 mt-2" />
 
       {noVotes ? (
         <EmptyState
-          title="No votes recorded yet"
-          message="Results will appear here once votes are submitted."
+          title="No votes recorded"
+          message="Election results will appear once votes are submitted."
         />
       ) : (
         data.positions.map((p) => (
-          <div className="card" key={p.id}>
-            <h3>{p.name}</h3>
+          <section key={p.id} className="border-t border-line py-5 first:border-t-0">
+            <h3 className="position-title text-base">{p.name}</h3>
             {p.candidates.length === 0 ? (
-              <p className="muted">No candidates.</p>
+              <p className="meta mt-2">No candidates.</p>
             ) : (
-              <table>
+              <table className="mt-3 w-full text-sm">
                 <tbody>
                   {p.candidates.map((c) => (
-                    <tr key={c.id}>
-                      <td>{c.name}</td>
-                      <td className="num">{c.votes}</td>
+                    <tr key={c.id} className="border-b border-line last:border-b-0">
+                      <td className="py-2">{c.name}</td>
+                      <td className="py-2 text-right font-semibold tabular-nums">{c.votes}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
-          </div>
+          </section>
         ))
       )}
 
-      <div className="card">
-        <h3>Participation</h3>
-        <div className="table-scroll">
-          <table className="voters">
-            <thead>
-              <tr>
-                <th>Matric</th>
-                <th>Name</th>
-                <th>Voted</th>
+      <p className="position-title mt-8">Voter participation</p>
+      <hr className="rule mb-2 mt-2" />
+      <div className="table-scroll">
+        <table className="w-full border-t border-line text-sm">
+          <thead>
+            <tr className="text-left text-ink/60">
+              <th className="py-2 pr-3 font-semibold">Matric</th>
+              <th className="py-2 pr-3 font-semibold">Name</th>
+              <th className="py-2 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.participation.voters.map((v) => (
+              <tr key={v.id} className="border-t border-line">
+                <td className="py-2 pr-3">{v.matric_number}</td>
+                <td className="py-2 pr-3">{v.name}</td>
+                <td className="py-2">{v.voted ? 'Voted' : 'Not voted'}</td>
               </tr>
-            </thead>
-            <tbody>
-              {data.participation.voters.map((v) => (
-                <tr key={v.id}>
-                  <td>{v.matric_number}</td>
-                  <td>{v.name}</td>
-                  <td>{v.voted ? 'Yes' : 'No'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pager offset={offset} page={PAGE} total={data.participation.total} onPage={setOffset} />
-        <p className="muted">This list never shows how anyone voted.</p>
+            ))}
+          </tbody>
+        </table>
       </div>
+      <Pager offset={offset} page={PAGE} total={data.participation.total} onPage={setOffset} />
+      <p className="field-hint">This list never shows how anyone voted.</p>
 
-      <div className="row">
-        <button onClick={notify} disabled={busy}>
-          {busy ? <Spinner label="Sending" /> : null}
-          <span>Send final results email</span>
-        </button>
-        {toast && <span className={toast.kind === 'ok' ? 'ok' : 'error'}>{toast.text}</span>}
-      </div>
+      <hr className="rule my-6" />
+      <Button variant="secondary" loading={busy} onClick={notify}>
+        Send final results email
+      </Button>
+      <Toast toast={toast} />
     </div>
   );
 }

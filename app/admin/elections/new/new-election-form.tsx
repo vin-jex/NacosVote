@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/client/api';
-import { Spinner } from '@/app/components/states';
+import { Button, MessageBlock } from '@/app/components/ui';
 
 export default function NewElectionForm() {
   const router = useRouter();
@@ -35,44 +35,86 @@ export default function NewElectionForm() {
 
   return (
     <form onSubmit={submit}>
-      <label htmlFor="title">Title</label>
-      <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+      <p className="position-title">Election details</p>
+      <hr className="rule mb-5 mt-2" />
 
-      <label htmlFor="desc">Description (optional)</label>
-      <textarea id="desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-
-      <label htmlFor="start">Voting start</label>
-      <input
-        id="start"
-        type="datetime-local"
-        value={votingStart}
-        onChange={(e) => setVotingStart(e.target.value)}
-      />
-
-      <label htmlFor="end">Voting end</label>
-      <input
-        id="end"
-        type="datetime-local"
-        value={votingEnd}
-        onChange={(e) => setVotingEnd(e.target.value)}
-      />
-
-      <div className="row">
-        <button type="submit" disabled={busy || !title.trim()}>
-          {busy ? <Spinner label="Creating" /> : null}
-          <span>Create</span>
-        </button>
-        <button type="button" className="secondary" onClick={() => router.push('/admin')}>
-          Cancel
-        </button>
+      <div className="mb-4">
+        <label htmlFor="title" className="field-label">
+          Title
+        </label>
+        <input
+          id="title"
+          className="field-input"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
       </div>
-      <p className="muted">
+
+      <div className="mb-4">
+        <label htmlFor="desc" className="field-label">
+          Description
+        </label>
+        <textarea
+          id="desc"
+          className="field-input"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+        />
+        <p className="field-hint">Optional.</p>
+      </div>
+
+      <p className="position-title mt-8">Voting period</p>
+      <hr className="rule mb-5 mt-2" />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="start" className="field-label">
+            Start
+          </label>
+          <input
+            id="start"
+            type="datetime-local"
+            className="field-input"
+            value={votingStart}
+            onChange={(e) => setVotingStart(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="end" className="field-label">
+            End
+          </label>
+          <input
+            id="end"
+            type="datetime-local"
+            className="field-input"
+            value={votingEnd}
+            onChange={(e) => setVotingEnd(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <hr className="rule my-6" />
+
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" loading={busy} disabled={!title.trim()}>
+          Create election
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => router.push('/admin')}>
+          Cancel
+        </Button>
+      </div>
+      <p className="field-hint">
         The election starts as a draft. Configure the ballot and eligible voters, then open it.
       </p>
+
       {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
+        <div className="mt-4">
+          <MessageBlock variant="error" title="Could not create the election">
+            {error}
+          </MessageBlock>
+        </div>
       )}
     </form>
   );

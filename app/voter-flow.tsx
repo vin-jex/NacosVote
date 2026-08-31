@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { apiFetch, apiGetWithRetry } from '@/lib/client/api';
 import { EmptyState, ErrorState, Spinner } from './components/states';
+import { Button, CandidateOption, MessageBlock, SectionRule, StatusBadge } from './components/ui';
+import { Brand } from './components/brand';
 
 type OpenElection = { id: number; title: string; votingEnd: string | null };
 type Candidate = { id: number; name: string };
@@ -59,7 +61,6 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Reconcile initial state once elections are known.
   useEffect(() => {
     if (!elections) return;
     if (elections.length === 1) {
@@ -173,12 +174,10 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
       return;
     }
     if (!res.ok && res.timedOut) {
-      // The server may have committed. Never claim failure; offer a safe check.
       setStep('uncertain');
       return;
     }
     if (!res.ok && res.status === 409 && res.code === 'ALREADY_VOTED') {
-      // Most likely our own earlier attempt succeeded.
       setStep('done');
       return;
     }
@@ -214,88 +213,131 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
     }
   }
 
-  // ---- render -------------------------------------------------------------
-
   return (
-    <main aria-live="polite">
-      <h1>NacosVote</h1>
-      <p className="muted">Secret ballot — your identity is never linked to your choices.</p>
+    <main className="mx-auto w-full max-w-[620px]">
+      <Brand
+        title="NacosVote"
+        subtitle={electionTitle && step !== 'pick' ? electionTitle : undefined}
+      />
+
+      <p className="meta">
+        Your vote is secret. Your identity is not linked to your candidate selections, and it can
+        only be submitted once for this election.
+      </p>
+
+      <SectionRule />
 
       {!online && (
-        <div className="banner closed" role="alert">
-          <strong>You&apos;re offline.</strong> Check your internet connection and try again.
+        <div className="mb-4">
+          <MessageBlock variant="warn" title="You are offline">
+            Check your internet connection, then try again.
+          </MessageBlock>
         </div>
       )}
 
       {loadFailed && (
         <ErrorState
           title="Voting information is temporarily unavailable"
-          message="We couldn't load the current elections. Please try again shortly."
+          message="We could not load the current elections. Please try again shortly."
           onRetry={reloadElections}
         />
       )}
-      {reloading && <Spinner label="Loading elections" />}
+      {reloading && (
+        <p className="meta flex items-center gap-2">
+          <Spinner label="Loading elections" /> Loading elections
+        </p>
+      )}
 
       {!loadFailed && elections && elections.length === 0 && (
         <EmptyState
           title="No election is currently open"
-          message="There is no active voting session right now. Check back later."
+          message="There is no active voting session right now. Check back when voting begins."
         />
       )}
 
       {!loadFailed && elections && elections.length > 0 && step === 'pick' && (
         <div>
-          <div className="banner open">Choose the election you are here to vote in.</div>
-          <label htmlFor="election">Election</label>
-          <select
-            id="election"
-            value={electionId ?? ''}
-            onChange={(e) => setElectionId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Select an election…</option>
-            {elections.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.title}
-              </option>
-            ))}
-          </select>
-          <button disabled={!electionId} onClick={() => setStep('identify')}>
+          <p className="section-title">Select your election</p>
+          <p className="meta mt-1">More than one election is open. Choose the one you are here to vote in.</p>
+          <div className="mt-4">
+            <label htmlFor="election" className="field-label">
+              Election
+            </label>
+            <select
+              id="election"
+              className="field-input"
+              value={electionId ?? ''}
+              onChange={(e) => setElectionId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Select an election</option>
+              {elections.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button className="mt-5" block disabled={!electionId} onClick={() => setStep('identify')}>
             Continue
-          </button>
+          </Button>
         </div>
       )}
 
       {step === 'identify' && chosen && (
         <form onSubmit={verify}>
-          <div className="banner open">
-            <strong>{chosen.title}</strong>
-            {chosen.votingEnd ? <div>Voting closes {fmtTime(chosen.votingEnd)}</div> : null}
+          <div className="mb-5">
+            <p className="section-title">{chosen.title}</p>
+            <div className="mt-2">
+              <StatusBadge
+                status="open"
+                detail={chosen.votingEnd ? `Closes ${fmtTime(chosen.votingEnd)}` : undefined}
+              />
+            </div>
           </div>
-          <label htmlFor="matric">Matriculation / registration number</label>
-          <input
-            id="matric"
-            value={matricNumber}
-            onChange={(e) => setMatricNumber(e.target.value)}
-            autoComplete="off"
-            required
-          />
-          <label htmlFor="fullname">Full name</label>
-          <input
-            id="fullname"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
-            required
-          />
-          <div className="row">
-            <button type="submit" disabled={busy || !matricNumber.trim() || !name.trim()}>
-              {busy ? <Spinner label="Verifying" /> : null}
-              <span>Verify &amp; continue</span>
-            </button>
+
+          <p className="position-title">Voter verification</p>
+          <hr className="rule mb-4 mt-2" />
+
+          <div className="mb-4">
+            <label htmlFor="matric" className="field-label">
+              Matriculation number
+            </label>
+            <input
+              id="matric"
+              className="field-input"
+              value={matricNumber}
+              onChange={(e) => setMatricNumber(e.target.value)}
+              autoComplete="off"
+              inputMode="text"
+              required
+            />
+          </div>
+          <div className="mb-5">
+            <label htmlFor="fullname" className="field-label">
+              Full name
+            </label>
+            <input
+              id="fullname"
+              className="field-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
+              required
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="submit"
+              loading={busy}
+              disabled={!matricNumber.trim() || !name.trim()}
+            >
+              Verify and continue
+            </Button>
             {elections && elections.length > 1 && (
-              <button type="button" className="secondary" onClick={() => setStep('pick')}>
+              <Button type="button" variant="secondary" onClick={() => setStep('pick')}>
                 Back
-              </button>
+              </Button>
             )}
           </div>
         </form>
@@ -303,81 +345,114 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
 
       {step === 'confirm' && (
         <div>
-          <div className="banner open">
-            <strong>{electionTitle}</strong>
-            {electionEnd ? <div>Voting closes {fmtTime(electionEnd)}</div> : null}
+          <div className="mb-5">
+            <StatusBadge
+              status="open"
+              detail={electionEnd ? `Closes ${fmtTime(electionEnd)}` : undefined}
+            />
           </div>
-          <p>Continue as</p>
-          <p className="name">{verifiedName}</p>
-          <p className="muted">Matric number: {verifiedMatric}</p>
-          <div className="row">
-            <button onClick={() => setStep('ballot')}>Continue</button>
-            <button className="secondary" onClick={restart}>
-              Cancel
-            </button>
+          <p className="kicker">Continue as</p>
+          <p className="page-title mt-1">{verifiedName}</p>
+          <p className="meta mt-1">{verifiedMatric}</p>
+          <hr className="rule my-5" />
+          <p className="text-sm text-ink/75">If this is not you, go back and check your details.</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button onClick={() => setStep('ballot')}>Continue to ballot</Button>
+            <Button variant="secondary" onClick={restart}>
+              Not you
+            </Button>
           </div>
         </div>
       )}
 
       {step === 'ballot' && (
         <div>
-          <div className="banner open">
-            <strong>{electionTitle}</strong>
+          <div className="mb-4">
+            <StatusBadge
+              status="open"
+              detail={electionEnd ? `Closes ${fmtTime(electionEnd)}` : undefined}
+            />
           </div>
+
           {ballot.map((p) => (
-            <fieldset key={p.id}>
-              <legend>{p.name}</legend>
-              {p.candidates.length === 0 && <p className="muted">No candidates for this position.</p>}
-              {p.candidates.map((c) => (
-                <label key={c.id} className="opt">
-                  <input
-                    type="radio"
-                    name={`pos-${p.id}`}
-                    checked={selections[p.id] === c.id}
-                    onChange={() => setSelections((s) => ({ ...s, [p.id]: c.id }))}
-                  />
-                  {c.name}
-                </label>
-              ))}
-            </fieldset>
+            <section key={p.id} className="mb-2">
+              <hr className="rule my-5" />
+              <h2 className="position-title">{p.name}</h2>
+              <p className="meta mt-1">Select one candidate.</p>
+              <div className="mt-3">
+                {p.candidates.length === 0 ? (
+                  <p className="meta">No candidates are configured for this position.</p>
+                ) : (
+                  p.candidates.map((c) => (
+                    <CandidateOption
+                      key={c.id}
+                      name={`pos-${p.id}`}
+                      value={c.id}
+                      candidate={c.name}
+                      checked={selections[p.id] === c.id}
+                      onChange={() => setSelections((s) => ({ ...s, [p.id]: c.id }))}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
           ))}
-          <button onClick={submit} disabled={busy || !allAnswered || !online}>
-            {busy ? <Spinner label="Submitting" /> : null}
-            <span>Submit vote</span>
-          </button>
-          {!allAnswered && <p className="muted">Select one candidate for every position.</p>}
+
+          <hr className="rule my-5" />
+
+          {!allAnswered && (
+            <div className="mb-4">
+              <MessageBlock variant="warn">
+                Select one candidate for every position before submitting.
+              </MessageBlock>
+            </div>
+          )}
+
+          <Button block loading={busy} disabled={!allAnswered || !online} onClick={submit}>
+            Submit vote
+          </Button>
         </div>
       )}
 
       {step === 'uncertain' && (
-        <div className="state">
-          <p className="state-title">We couldn&apos;t confirm the result of your submission</p>
-          <p>Do not submit another ballot yet. Your selections are still here.</p>
-          <div className="row">
-            <button onClick={checkStatus} disabled={busy}>
-              {busy ? <Spinner label="Checking" /> : null}
-              <span>Check vote status</span>
-            </button>
-            <button className="secondary" onClick={() => setStep('ballot')} disabled={busy}>
+        <div>
+          <hr className="rule my-5" />
+          <p className="section-title">We could not confirm your submission</p>
+          <p className="mt-2 text-sm text-ink/80">
+            Do not submit another ballot yet. Your selections are still on this page. Check your vote
+            status to see whether it was recorded.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Button loading={busy} onClick={checkStatus}>
+              Check vote status
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => setStep('ballot')}>
               Back to ballot
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {step === 'done' && (
-        <div className="done">
-          <h2>✓ Vote recorded</h2>
-          <p>Your vote has been successfully recorded.</p>
-          <p>You cannot vote again in this election.</p>
-          <p className="muted">Thank you.</p>
+        <div>
+          <hr className="rule my-6" />
+          <p className="kicker text-accent">Vote recorded</p>
+          <h2 className="page-title mt-1">Your ballot has been recorded</h2>
+          <p className="mt-3 text-sm text-ink/80">
+            Your vote is secret. Your identity is not stored with your candidate selections.
+          </p>
+          <p className="mt-2 text-sm text-ink/80">You cannot vote again in this election.</p>
+          <hr className="rule my-6" />
+          <p className="meta">Thank you for participating.</p>
         </div>
       )}
 
       {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
+        <div className="mt-4">
+          <MessageBlock variant="error" title="There was a problem">
+            {error}
+          </MessageBlock>
+        </div>
       )}
     </main>
   );

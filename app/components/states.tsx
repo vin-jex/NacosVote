@@ -4,21 +4,27 @@ import type { ReactNode } from 'react';
 
 export function Spinner({ label }: { label?: string }) {
   return (
-    <span className="spinner-wrap" role="status" aria-live="polite">
+    <span className="inline-flex items-center" role="status" aria-live="polite">
       <span className="spinner" aria-hidden="true" />
       {label && <span className="sr-only">{label}</span>}
     </span>
   );
 }
 
-export function SkeletonLine({ w = '100%' }: { w?: string }) {
-  return <span className="skeleton skeleton-line" style={{ width: w }} aria-hidden="true" />;
+export function SkeletonLine({ w = '100%', className = '' }: { w?: string; className?: string }) {
+  return (
+    <span
+      className={`skeleton my-2 h-[0.85rem] ${className}`}
+      style={{ width: w }}
+      aria-hidden="true"
+    />
+  );
 }
 
 export function SkeletonCard({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="card" aria-hidden="true">
-      <SkeletonLine w="45%" />
+    <div className="border-t border-line py-5" aria-hidden="true">
+      <SkeletonLine w="45%" className="h-4" />
       {Array.from({ length: lines }).map((_, i) => (
         <SkeletonLine key={i} w={`${90 - i * 12}%`} />
       ))}
@@ -28,19 +34,15 @@ export function SkeletonCard({ lines = 3 }: { lines?: number }) {
 
 export function SkeletonRows({ rows = 5, cols = 3 }: { rows?: number; cols?: number }) {
   return (
-    <table aria-hidden="true">
-      <tbody>
-        {Array.from({ length: rows }).map((_, r) => (
-          <tr key={r}>
-            {Array.from({ length: cols }).map((_, c) => (
-              <td key={c}>
-                <SkeletonLine w={c === 0 ? '80%' : '50%'} />
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div aria-hidden="true" className="divide-y divide-line">
+      {Array.from({ length: rows }).map((_, r) => (
+        <div key={r} className="flex gap-4 py-3">
+          {Array.from({ length: cols }).map((_, c) => (
+            <SkeletonLine key={c} w={c === 0 ? '32%' : '20%'} />
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -54,12 +56,12 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="state state-error" role="alert">
-      <p className="state-title">{title}</p>
-      {message && <p className="muted">{message}</p>}
+    <div className="msg-error my-4" role="alert">
+      <p className="msg-title">{title}</p>
+      {message && <p className="mt-1 text-ink/75">{message}</p>}
       {onRetry && (
-        <button className="secondary" onClick={onRetry}>
-          Retry
+        <button className="btn-secondary mt-3" onClick={onRetry}>
+          <span>Retry</span>
         </button>
       )}
     </div>
@@ -76,10 +78,10 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="state state-empty">
-      <p className="state-title">{title}</p>
-      {message && <p className="muted">{message}</p>}
-      {action}
+    <div className="border-y border-line py-10 text-center">
+      <p className="section-title">{title}</p>
+      {message && <p className="meta mx-auto mt-1 max-w-sm">{message}</p>}
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   );
 }
@@ -95,9 +97,9 @@ export function RefreshNote({
 }) {
   if (error) {
     return (
-      <span className="refresh-note error" role="status">
-        Couldn&apos;t refresh.{' '}
-        <button className="linkbtn" onClick={onRetry}>
+      <span className="inline-flex items-center gap-1.5 text-xs text-danger" role="status">
+        Could not refresh.
+        <button className="font-semibold underline underline-offset-2" onClick={onRetry}>
           Retry
         </button>
       </span>
@@ -105,8 +107,8 @@ export function RefreshNote({
   }
   if (refreshing) {
     return (
-      <span className="refresh-note muted" role="status">
-        <span className="spinner sm" aria-hidden="true" /> updating…
+      <span className="inline-flex items-center gap-1.5 text-xs text-ink/55" role="status">
+        <span className="spinner spinner-sm" aria-hidden="true" /> updating
       </span>
     );
   }

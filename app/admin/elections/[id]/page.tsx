@@ -8,10 +8,14 @@ export default async function ElectionDetailPage({ params }: { params: { id: str
   await requireAdminPage();
   return (
     <main>
-      <p className="muted">
-        <Link href="/admin">← All elections</Link>
+      <p className="meta">
+        <Link href="/admin" className="no-underline hover:underline">
+          Back to all elections
+        </Link>
       </p>
-      <ElectionDetail electionId={Number(params.id)} />
+      <div className="mt-2">
+        <ElectionDetail electionId={Number(params.id)} />
+      </div>
     </main>
   );
 }
