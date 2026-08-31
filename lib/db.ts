@@ -1,4 +1,4 @@
-import { Pool, neonConfig, DatabaseError } from '@neondatabase/serverless';
+import { Pool, neonConfig, DatabaseError, types } from '@neondatabase/serverless';
 import type { PoolClient } from 'pg';
 import ws from 'ws';
 import { log, safeError } from './log';
@@ -9,6 +9,10 @@ import { log, safeError } from './log';
 // 5432 wire protocol, survives networks / middleboxes that reset non-HTTP TLS.
 // A WebSocket constructor must be supplied outside modern browsers.
 neonConfig.webSocketConstructor = ws;
+
+// Parse int8 (bigint, OID 20) as a JS number. All ids and counts in this schema
+// are far below 2^53, and the rest of the code compares them as numbers.
+types.setTypeParser(20, (v: string | null) => (v === null ? null : Number(v)));
 
 // The serverless driver's SCRAM auth does not use channel binding; strip the
 // param some Neon dashboards add so it doesn't reject the handshake.
