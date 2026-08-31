@@ -11,6 +11,7 @@ import {
   SkeletonRows,
 } from '@/app/components/states';
 import { Button, MessageBlock, StatusBadge } from '@/app/components/ui';
+import Link from 'next/link';
 
 type Candidate = { id: number; name: string };
 type Position = { id: number; name: string; candidates: Candidate[] };
@@ -27,6 +28,7 @@ type Detail = {
   hasVotes: boolean;
   eligibilityMode: 'restricted' | 'open';
   maxVoters: number | null;
+  resultsPublic: boolean;
   ballotsCast: number;
   ballot: Position[];
   turnout: { voted: number; total: number };
@@ -35,7 +37,14 @@ type Tab = 'settings' | 'ballot' | 'voters' | 'results';
 
 function fmt(iso: string | null): string {
   return iso
-    ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    ? new Date(iso).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
     : 'Not set';
 }
 function toLocalInput(iso: string | null): string {
@@ -120,11 +129,10 @@ export default function ElectionDetail({ electionId }: { electionId: number }) {
               role="tab"
               aria-selected={tab === t}
               onClick={() => setTab(t)}
-              className={`min-h-[40px] rounded-t px-3 text-sm font-semibold capitalize transition-colors ${
-                tab === t
+              className={`min-h-[40px] rounded-t px-3 text-sm font-semibold capitalize transition-colors ${tab === t
                   ? 'border-b-2 border-accent text-ink'
                   : 'text-ink/55 hover:bg-ink/5'
-              }`}
+                }`}
             >
               {t === 'ballot' ? 'Positions & candidates' : t === 'voters' ? 'Eligible voters' : t}
             </button>
@@ -144,7 +152,9 @@ export default function ElectionDetail({ electionId }: { electionId: number }) {
             reload={reload}
           />
         )}
-        {tab === 'results' && <ResultsTab electionId={electionId} />}
+        {tab === 'results' && (
+          <ResultsTab electionId={electionId} resultsPublic={data.resultsPublic} />
+        )}
       </div>
     </>
   );
@@ -158,6 +168,7 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
   const [end, setEnd] = useState(toLocalInput(detail.votingEnd));
   const [mode, setMode] = useState<'restricted' | 'open'>(detail.eligibilityMode);
   const [maxVoters, setMaxVoters] = useState(detail.maxVoters != null ? String(detail.maxVoters) : '');
+  const [resultsPublic, setResultsPublic] = useState(detail.resultsPublic);
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -280,6 +291,31 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
         to that matric so the roll can be audited afterward. The limit counts ballots actually cast.
       </p>
 
+      <p className="position-title mt-8">Results</p>
+      <hr className="rule mb-4 mt-2" />
+      <label className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 accent-accent"
+          checked={resultsPublic}
+          onChange={(e) => setResultsPublic(e.target.checked)}
+        />
+        <span className="text-sm">
+          Publish results publicly. Once the election is <strong>closed</strong>, its aggregate tally
+          appears at <code>/results/{detail.id}</code> and in the &quot;Published results&quot; list on
+          the voter home page. Uncheck any time to remove it. Individual voters and their choices are
+          never shown.
+        </span>
+      </label>
+      {resultsPublic && detail.status === 'closed' && (
+        <p className="field-hint">
+          Live now:{' '}
+          <Link href={`/results/${detail.id}`} target="_blank" rel="noreferrer">
+            /results/{detail.id}
+          </Link>
+        </p>
+      )}
+
       <hr className="rule my-6" />
 
       <div className="flex flex-wrap gap-3">
@@ -293,6 +329,7 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
               votingEnd: end ? new Date(end).toISOString() : null,
               eligibilityMode: mode,
               maxVoters: maxVoters.trim() === '' ? null : Math.max(1, Math.floor(Number(maxVoters))),
+              resultsPublic,
             })
           }
         >
@@ -616,9 +653,8 @@ function VotersTab({
           <>
             <p className="text-lg font-semibold tabular-nums">
               {isOpen
-                ? `${data.voted} ballot${data.voted === 1 ? '' : 's'} cast${
-                    maxVoters != null ? ` of ${maxVoters} allowed` : ''
-                  }`
+                ? `${data.voted} ballot${data.voted === 1 ? '' : 's'} cast${maxVoters != null ? ` of ${maxVoters} allowed` : ''
+                }`
                 : `${data.eligible} eligible, ${data.voted} voted, ${data.notVoted} not yet`}
             </p>
             <RefreshNote refreshing={refreshing} error={error} onRetry={reloadVoters} />
@@ -806,7 +842,13 @@ function Pager({
   );
 }
 
-function ResultsTab({ electionId }: { electionId: number }) {
+function ResultsTab({
+  electionId,
+  resultsPublic,
+}: {
+  electionId: number;
+  resultsPublic: boolean;
+}) {
   const { toast, ok, err } = useToast();
   const [offset, setOffset] = useState(0);
   const url = `/api/admin/elections/${electionId}/results?limit=${PAGE}&offset=${offset}`;
@@ -922,9 +964,26 @@ function ResultsTab({ electionId }: { electionId: number }) {
       <p className="field-hint">This list never shows how anyone voted.</p>
 
       <hr className="rule my-6" />
-      <Button variant="secondary" loading={busy} onClick={notify}>
-        Send final results email
-      </Button>
+      <div className="flex flex-wrap items-center gap-4">
+        <Link
+          href={`/admin/elections/${electionId}/results-print`}
+          target="_blank"
+          rel="noreferrer"
+          className="btn-secondary no-underline"
+        >
+          <span>Printable results sheet</span>
+        </Link>
+        <Button variant="secondary" loading={busy} onClick={notify}>
+          Send final results email
+        </Button>
+      </div>
+      <p className="field-hint">
+        {resultsPublic
+          ? 'Results are set to publish publicly (once closed). Change this in Settings.'
+          : 'Results are private. Turn on public results in Settings to share them at /results/' +
+          electionId +
+          '.'}
+      </p>
       <Toast toast={toast} />
     </div>
   );

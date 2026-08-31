@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-          <div className="mb-4 flex justify-end">
+          <div className="no-print mb-4 flex justify-end">
             <ThemeToggle />
           </div>
           {children}
