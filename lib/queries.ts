@@ -143,6 +143,24 @@ export async function getOpenElections(): Promise<Pick<Election, 'id' | 'title' 
   return rows;
 }
 
+/** Announced but not started yet: shown to voters so they know what is coming. */
+export async function getUpcomingElections(): Promise<
+  Pick<Election, 'id' | 'title' | 'voting_start' | 'voting_end'>[]
+> {
+  const { rows } = await pool.query<
+    Pick<Election, 'id' | 'title' | 'voting_start' | 'voting_end'>
+  >(
+    `SELECT id, title, voting_start, voting_end
+     FROM elections
+     WHERE status IN ('scheduled', 'open')
+       AND voting_start IS NOT NULL AND voting_end IS NOT NULL
+       AND now() < voting_start
+     ORDER BY voting_start ASC
+     LIMIT 20`,
+  );
+  return rows;
+}
+
 export async function createElection(input: {
   title: string;
   description: string | null;

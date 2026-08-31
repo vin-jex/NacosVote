@@ -8,6 +8,7 @@ import { Button, CandidateOption, MessageBlock, SectionRule, StatusBadge } from 
 import { Brand } from './components/brand';
 
 type OpenElection = { id: number; title: string; votingEnd: string | null };
+type UpcomingElection = { id: number; title: string; votingStart: string | null };
 type Candidate = { id: number; name: string };
 type Position = { id: number; name: string; candidates: Candidate[] };
 type Step = 'pick' | 'identify' | 'confirm' | 'ballot' | 'done' | 'uncertain';
@@ -15,6 +16,40 @@ type Step = 'pick' | 'identify' | 'confirm' | 'ballot' | 'done' | 'uncertain';
 function fmtTime(iso: string | null): string {
   if (!iso) return '';
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function opensLabel(iso: string | null): string {
+  if (!iso) return 'Opens soon';
+  const start = new Date(iso);
+  const diffMs = start.getTime() - Date.now();
+  const time = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (diffMs <= 0) return `Opens shortly, ${time}`;
+  const hours = diffMs / 3_600_000;
+  if (hours < 1) return `Opens in ${Math.max(1, Math.round(diffMs / 60_000))} min`;
+  const today = new Date();
+  const sameDay = start.toDateString() === today.toDateString();
+  const tomorrow = new Date(today.getTime() + 86_400_000).toDateString() === start.toDateString();
+  if (sameDay) return `Opens today at ${time}`;
+  if (tomorrow) return `Opens tomorrow at ${time}`;
+  return `Opens ${start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} at ${time}`;
+}
+
+function UpcomingList({ upcoming }: { upcoming: UpcomingElection[] }) {
+  if (upcoming.length === 0) return null;
+  return (
+    <section className="mt-8">
+      <p className="kicker">Coming up</p>
+      <ul className="mt-2 border-t border-line">
+        {upcoming.map((e) => (
+          <li key={e.id} className="border-b border-line py-3">
+            <p className="font-serif text-base text-ink">{e.title}</p>
+            <p className="meta">{opensLabel(e.votingStart)}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="field-hint">You will be able to vote once an election opens. Check back then.</p>
+    </section>
+  );
 }
 
 function useOnline(): boolean {
@@ -39,10 +74,17 @@ function newKey(): string {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export default function VoterFlow({ initialElections }: { initialElections: OpenElection[] | null }) {
+export default function VoterFlow({
+  initialElections,
+  initialUpcoming = [],
+}: {
+  initialElections: OpenElection[] | null;
+  initialUpcoming?: UpcomingElection[];
+}) {
   const online = useOnline();
 
   const [elections, setElections] = useState<OpenElection[] | null>(initialElections);
+  const [upcoming, setUpcoming] = useState<UpcomingElection[]>(initialUpcoming);
   const [loadFailed, setLoadFailed] = useState(initialElections === null);
   const [reloading, setReloading] = useState(false);
 
@@ -80,10 +122,14 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
 
   const reloadElections = useCallback(async () => {
     setReloading(true);
-    const res = await apiGetWithRetry<{ elections: OpenElection[] }>('/api/elections/open');
+    const res = await apiGetWithRetry<{
+      elections: OpenElection[];
+      upcoming: UpcomingElection[];
+    }>('/api/elections/open');
     setReloading(false);
     if (res.ok) {
       setElections(res.data.elections);
+      setUpcoming(res.data.upcoming ?? []);
       setLoadFailed(false);
       setStep(res.data.elections.length === 1 ? 'identify' : 'pick');
     } else {
@@ -291,6 +337,10 @@ export default function VoterFlow({ initialElections }: { initialElections: Open
             Continue
           </Button>
         </div>
+      )}
+
+      {!loadFailed && (step === 'pick' || (elections && elections.length === 0)) && (
+        <UpcomingList upcoming={upcoming} />
       )}
 
       {step === 'identify' && chosen && (
