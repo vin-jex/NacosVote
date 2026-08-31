@@ -147,6 +147,18 @@ CREATE TABLE admin_audit_log (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- Admin credentials. Seeded once from the ADMIN_*_EMAIL / ADMIN_*_PASSWORD_HASH
+-- env vars (see lib/admins.ts), then owned by the database so an admin can
+-- change their own password. Only the bcrypt hash is ever stored.
+CREATE TABLE admins (
+  id            bigserial PRIMARY KEY,
+  email         text NOT NULL UNIQUE,
+  password_hash text NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT admins_email_lowercase CHECK (email = lower(email))
+);
+
 -- ---------------------------------------------------------------------------
 -- Indexes (driven by actual query patterns)
 -- ---------------------------------------------------------------------------

@@ -53,7 +53,27 @@ cp .env.example .env.local
 Fill in every value. `NEXTAUTH_SECRET`: `openssl rand -base64 32`. Admin hashes:
 
 ```bash
-pnpm tsx scripts/hash-password.ts "the-admin-password"
+pnpm tsx scripts/hash-password.ts "a-strong-password"
+```
+
+### Admin accounts
+
+There are exactly two admins. `ADMIN_1_EMAIL` / `ADMIN_1_PASSWORD_HASH` (and
+`ADMIN_2_*`) **seed** the `admins` table the first time someone signs in. After
+that the database is authoritative, so an admin can change their own password at
+`/admin/account` (current password required; a notification email is sent). The
+env `*_PASSWORD_HASH` is never re-applied on redeploy once a row exists.
+
+Reset a locked-out admin out of band:
+
+```bash
+pnpm tsx scripts/set-admin-password.ts "admin@example.com" "a-new-strong-password"
+```
+
+If your database predates the `admins` table, apply the migration:
+
+```bash
+pnpm tsx scripts/db-push.ts db/migrations/001_add_admins.sql
 ```
 
 ### 3. Create the schema (run once, against an empty database)

@@ -46,7 +46,7 @@ function renderFinalResults(p: FinalResultsPayload) {
   const lines = [
     `${p.title} - final results`,
     '',
-    `Voting period: ${fmt(p.votingStart)} → ${fmt(p.votingEnd)}`,
+    `Voting period: ${fmt(p.votingStart)} to ${fmt(p.votingEnd)}`,
     `Turnout: ${p.turnout.voted} of ${p.turnout.total} (${pct})`,
     '',
   ];
@@ -56,6 +56,30 @@ function renderFinalResults(p: FinalResultsPayload) {
     lines.push('');
   }
   return { subject: `NacosVote: final results - ${p.title}`, text: lines.join('\n') };
+}
+
+/**
+ * Best-effort security alert when an admin changes their own password. Sent
+ * directly (not via the outbox, which is election-scoped) and never blocks or
+ * fails the password change. Carries no password or hash.
+ */
+export async function sendPasswordChangedEmail(adminEmail: string): Promise<void> {
+  const resend = client();
+  if (!resend) return;
+  const recipients = new Set([adminEmail, ...adminAddresses()]);
+  await resend.emails.send({
+    from: FROM,
+    to: [...recipients],
+    subject: 'NacosVote: an admin password was changed',
+    text: [
+      `The password for the admin account ${adminEmail} was just changed.`,
+      `Time: ${new Date().toLocaleString()}`,
+      '',
+      'If you did not make this change, your account may be compromised.',
+      'Contact the other administrator right away. If you can still sign in,',
+      'change the password again from the Account page.',
+    ].join('\n'),
+  });
 }
 
 /**

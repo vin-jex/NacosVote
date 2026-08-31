@@ -2,18 +2,9 @@ import type { NextAuthOptions } from 'next-auth';
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import bcrypt from 'bcryptjs';
 import { rateLimit } from './redis';
 import { log } from './log';
-
-type AdminRecord = { email: string; hash: string };
-
-function admins(): AdminRecord[] {
-  return [
-    { email: process.env.ADMIN_1_EMAIL, hash: process.env.ADMIN_1_PASSWORD_HASH },
-    { email: process.env.ADMIN_2_EMAIL, hash: process.env.ADMIN_2_PASSWORD_HASH },
-  ].filter((a): a is AdminRecord => Boolean(a.email && a.hash));
-}
+import { verifyAdminCredentials } from './admins';
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
@@ -41,18 +32,12 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const admin = admins().find((a) => a.email.toLowerCase() === email);
-        // Always run a bcrypt compare so timing doesn't distinguish unknown
-        // emails from wrong passwords.
-        const hash =
-          admin?.hash ?? '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
-        const ok = await bcrypt.compare(password, hash);
-        if (!admin || !ok) {
+        const verified = await verifyAdminCredentials(email, password);
+        if (!verified) {
           log.info('admin_login_failed', {});
           return null;
         }
-
-        return { id: admin.email, email: admin.email };
+        return { id: verified, email: verified };
       },
     }),
   ],

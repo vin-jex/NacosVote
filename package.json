@@ -10,6 +10,7 @@
     "seed": "tsx scripts/seed.ts",
     "db:push": "tsx scripts/db-push.ts",
     "hash-password": "tsx scripts/hash-password.ts",
+    "set-admin-password": "tsx scripts/set-admin-password.ts",
     "test": "vitest run",
     "load-test": "tsx scripts/load-test.ts"
   },

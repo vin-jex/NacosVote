@@ -146,6 +146,11 @@ export const patchVoterSchema = z
   })
   .refine((v) => v.matricNumber != null || v.name != null, { message: 'nothing to update' });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(10).max(200),
+});
+
 export const listQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
