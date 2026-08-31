@@ -54,24 +54,33 @@ export default async function PrintableResults({ params }: { params: { id: strin
       </p>
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
 
-      {data.turnout.voted === 0 ? (
+      {data.positions.every((p) => p.candidates.every((c) => c.votes === 0)) ? (
         <p className="section-title mt-6">No votes were recorded.</p>
       ) : (
-        data.positions.map((p) => (
-          <section key={p.id} className="mt-8">
-            <h2 className="position-title text-base">{p.name}</h2>
-            <table className="mt-3 w-full text-sm">
-              <tbody>
-                {p.candidates.map((c) => (
-                  <tr key={c.id} className="border-b border-line last:border-b-0">
-                    <td className="py-2 pr-3">{c.name}</td>
-                    <td className="py-2 text-right font-semibold tabular-nums">{c.votes}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ))
+        data.positions.map((p) => {
+          const cast = p.candidates.reduce((s, c) => s + c.votes, 0);
+          return (
+            <section key={p.id} className="mt-8">
+              <h2 className="position-title text-base">{p.name}</h2>
+              <p className="field-hint">{cast} vote{cast === 1 ? '' : 's'} for this position</p>
+              <table className="mt-3 w-full text-sm">
+                <tbody>
+                  {p.candidates.map((c) => (
+                    <tr key={c.id} className="border-b border-line last:border-b-0">
+                      <td className="py-2 pr-3">{c.name}</td>
+                      <td className="whitespace-nowrap py-2 text-right tabular-nums">
+                        <span className="font-semibold">{c.votes}</span>
+                        <span className="ml-2 text-ink/60">
+                          {(cast ? (c.votes / cast) * 100 : 0).toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          );
+        })
       )}
 
       <p className="field-hint mt-10">

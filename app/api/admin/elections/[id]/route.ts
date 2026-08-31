@@ -49,6 +49,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         eligibilityMode: election.eligibility_mode,
         maxVoters: election.max_voters,
         resultsPublic: election.results_public,
+        resultsLive: election.results_live,
         ballotsCast: turnout.voted,
         ballot,
         turnout,
@@ -76,6 +77,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (body.eligibilityMode !== undefined) patch.eligibility_mode = body.eligibilityMode;
     if (body.maxVoters !== undefined) patch.max_voters = body.maxVoters ?? null;
     if (body.resultsPublic !== undefined) patch.results_public = body.resultsPublic;
+    if (body.resultsLive !== undefined) patch.results_live = body.resultsLive;
 
     if (body.status !== undefined && body.status !== current.status) {
       if (!canTransition(current.status, body.status)) {

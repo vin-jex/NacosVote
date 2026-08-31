@@ -14,7 +14,12 @@ export type UpcomingElection = {
   votingStart: string | null;
   votingEnd: string | null;
 };
-export type PublishedResult = { id: number; title: string; votingEnd: string | null };
+export type PublishedResult = {
+  id: number;
+  title: string;
+  status: string;
+  votingEnd: string | null;
+};
 
 export default async function Home() {
   let elections: { id: number; title: string; votingEnd: string | null }[] | null = null;
@@ -41,6 +46,7 @@ export default async function Home() {
     results = res.map((e) => ({
       id: e.id,
       title: e.title,
+      status: e.status,
       votingEnd: e.voting_end ? new Date(e.voting_end).toISOString() : null,
     }));
   } catch (err) {

@@ -41,9 +41,12 @@ CREATE TABLE elections (
   -- Optional hard cap on the number of ballots cast (enforced in the vote
   -- transaction under a per-election advisory lock). NULL = no cap.
   max_voters    integer CHECK (max_voters IS NULL OR max_voters > 0),
-  -- When true AND the election is closed, aggregate results are shown on the
-  -- public /results/<id> page and listed on the voter home page.
+  -- Public results visibility:
+  --   results_public = false          -> private (only admins)
+  --   results_public = true           -> aggregate tally is public once CLOSED
+  --   results_public + results_live   -> also public while voting is OPEN
   results_public boolean NOT NULL DEFAULT false,
+  results_live   boolean NOT NULL DEFAULT false,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   -- end strictly after start (invariant: impossible windows rejected by the DB)

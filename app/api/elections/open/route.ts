@@ -47,6 +47,7 @@ export async function GET() {
         results: results.map((e) => ({
           id: e.id,
           title: e.title,
+          status: e.status,
           votingEnd: e.voting_end ? new Date(e.voting_end).toISOString() : null,
         })),
       },
