@@ -1,0 +1,75 @@
+name: Deploy (Vercel)
+
+# Production deploy on merge to main. Runs only when the three Vercel secrets are
+# configured on the repo — otherwise it no-ops (green) so forks / early setup
+# don't get a red X. Alternatively, connect the repo in the Vercel dashboard and
+# delete this file to use Vercel's native Git integration instead.
+#
+# Required repo secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+#
+# NOTE: this deploys application code only. Schema changes in db/schema.sql (or
+# db/migrations/*) must be applied to the production database separately.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check for Vercel secrets
+        id: cfg
+        run: |
+          if [ -n "${{ secrets.VERCEL_TOKEN }}" ] \
+             && [ -n "${{ secrets.VERCEL_ORG_ID }}" ] \
+             && [ -n "${{ secrets.VERCEL_PROJECT_ID }}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Vercel secrets not set — skipping deploy."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+
+      - uses: pnpm/action-setup@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install Vercel CLI
+        if: steps.cfg.outputs.ready == 'true'
+        run: pnpm add -g vercel@latest
+
+      - name: Pull Vercel env
+        if: steps.cfg.outputs.ready == 'true'
+        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build
+        if: steps.cfg.outputs.ready == 'true'
+        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy
+        if: steps.cfg.outputs.ready == 'true'
+        run: vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
