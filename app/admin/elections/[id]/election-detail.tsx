@@ -25,6 +25,9 @@ type Detail = {
   votingEnd: string | null;
   ballotEditable: boolean;
   hasVotes: boolean;
+  eligibilityMode: 'restricted' | 'open';
+  maxVoters: number | null;
+  ballotsCast: number;
   ballot: Position[];
   turnout: { voted: number; total: number };
 };
@@ -133,7 +136,13 @@ export default function ElectionDetail({ electionId }: { electionId: number }) {
         {tab === 'settings' && <SettingsTab detail={data} reload={reload} />}
         {tab === 'ballot' && <BallotTab detail={data} reload={reload} />}
         {tab === 'voters' && (
-          <VotersTab electionId={electionId} status={data.status} reload={reload} />
+          <VotersTab
+            electionId={electionId}
+            status={data.status}
+            eligibilityMode={data.eligibilityMode}
+            maxVoters={data.maxVoters}
+            reload={reload}
+          />
         )}
         {tab === 'results' && <ResultsTab electionId={electionId} />}
       </div>
@@ -147,6 +156,8 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
   const [description, setDescription] = useState(detail.description ?? '');
   const [start, setStart] = useState(toLocalInput(detail.votingStart));
   const [end, setEnd] = useState(toLocalInput(detail.votingEnd));
+  const [mode, setMode] = useState<'restricted' | 'open'>(detail.eligibilityMode);
+  const [maxVoters, setMaxVoters] = useState(detail.maxVoters != null ? String(detail.maxVoters) : '');
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -232,6 +243,43 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
         </div>
       </div>
 
+      <p className="position-title mt-8">Who can vote</p>
+      <hr className="rule mb-5 mt-2" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="s-mode" className="field-label">
+            Eligibility
+          </label>
+          <select
+            id="s-mode"
+            className="field-input"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as 'restricted' | 'open')}
+          >
+            <option value="restricted">Restricted to a voter list</option>
+            <option value="open">Open (anyone with a matric number and full name)</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="s-max" className="field-label">
+            Maximum ballots (optional)
+          </label>
+          <input
+            id="s-max"
+            type="number"
+            min={1}
+            className="field-input"
+            value={maxVoters}
+            onChange={(e) => setMaxVoters(e.target.value)}
+            placeholder="No limit"
+          />
+        </div>
+      </div>
+      <p className="field-hint">
+        In open mode a voter still gives their matric number and full name; it is recorded and locked
+        to that matric so the roll can be audited afterward. The limit counts ballots actually cast.
+      </p>
+
       <hr className="rule my-6" />
 
       <div className="flex flex-wrap gap-3">
@@ -243,6 +291,8 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
               description: description.trim() || null,
               votingStart: start ? new Date(start).toISOString() : null,
               votingEnd: end ? new Date(end).toISOString() : null,
+              eligibilityMode: mode,
+              maxVoters: maxVoters.trim() === '' ? null : Math.max(1, Math.floor(Number(maxVoters))),
             })
           }
         >
@@ -466,12 +516,17 @@ const PAGE = 50;
 function VotersTab({
   electionId,
   status,
+  eligibilityMode,
+  maxVoters,
   reload,
 }: {
   electionId: number;
   status: string;
+  eligibilityMode: 'restricted' | 'open';
+  maxVoters: number | null;
   reload: () => void;
 }) {
+  const isOpen = eligibilityMode === 'open';
   const { toast, ok, err } = useToast();
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
@@ -560,14 +615,29 @@ function VotersTab({
         ) : data ? (
           <>
             <p className="text-lg font-semibold tabular-nums">
-              {data.eligible} eligible, {data.voted} voted, {data.notVoted} not yet
+              {isOpen
+                ? `${data.voted} ballot${data.voted === 1 ? '' : 's'} cast${
+                    maxVoters != null ? ` of ${maxVoters} allowed` : ''
+                  }`
+                : `${data.eligible} eligible, ${data.voted} voted, ${data.notVoted} not yet`}
             </p>
             <RefreshNote refreshing={refreshing} error={error} onRetry={reloadVoters} />
           </>
         ) : null}
       </div>
 
-      {status !== 'closed' && (
+      {isOpen && (
+        <div className="mt-5">
+          <MessageBlock variant="info" title="Open election">
+            No pre-set list. Anyone who provides a matric number and full name can vote
+            {maxVoters != null ? `, up to ${maxVoters} ballots` : ''}. Their details are recorded and
+            locked to that matric. The list below is everyone who has voted; change the mode in
+            Settings to restrict it.
+          </MessageBlock>
+        </div>
+      )}
+
+      {!isOpen && status !== 'closed' && (
         <>
           <p className="position-title mt-8">Add from voter registry</p>
           <hr className="rule mb-4 mt-2" />
@@ -634,24 +704,26 @@ function VotersTab({
         </>
       )}
 
-      <p className="position-title mt-8">Eligible voters</p>
+      <p className="position-title mt-8">{isOpen ? 'Who has voted' : 'Eligible voters'}</p>
       <hr className="rule mb-4 mt-2" />
       <input
         className="field-input mb-4"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Filter eligible voters"
-        aria-label="Filter eligible voters"
+        placeholder={isOpen ? 'Filter by matric number or name' : 'Filter eligible voters'}
+        aria-label="Filter voters"
       />
       {loading && !data ? (
         <SkeletonRows rows={6} cols={4} />
       ) : data && data.voters.length === 0 ? (
         <EmptyState
-          title={debouncedQ ? 'No voters found' : 'No eligible voters yet'}
+          title={debouncedQ ? 'No voters found' : isOpen ? 'No ballots cast yet' : 'No eligible voters yet'}
           message={
             debouncedQ
               ? 'Try a different matric number or name.'
-              : 'Add voters to this election before opening it.'
+              : isOpen
+                ? 'People appear here as they vote.'
+                : 'Add voters to this election before opening it.'
           }
         />
       ) : data ? (

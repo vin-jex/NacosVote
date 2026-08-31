@@ -99,6 +99,8 @@ export const patchElectionSchema = z
     status: z.enum(['draft', 'scheduled', 'open', 'closed']).optional(),
     votingStart: isoDateTime.optional(),
     votingEnd: isoDateTime.optional(),
+    eligibilityMode: z.enum(['restricted', 'open']).optional(),
+    maxVoters: z.number().int().positive().max(1_000_000).nullable().optional(),
   })
   .strict();
 

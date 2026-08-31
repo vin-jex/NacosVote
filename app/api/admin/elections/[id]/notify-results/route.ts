@@ -1,5 +1,5 @@
 import { handle, ok, adminEmail, parseId, ApiError } from '@/lib/api';
-import { enqueueEmail, getElection, getResults } from '@/lib/queries';
+import { enqueueFinalResults, getElection } from '@/lib/queries';
 import { flushOutbox } from '@/lib/email';
 import { logAdminAction } from '@/lib/audit';
 
@@ -11,24 +11,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     const admin = await adminEmail();
     const id = parseId(params.id);
     if (!id) throw new ApiError('NOT_FOUND', 404, 'Election not found.');
+    if (!(await getElection(id))) throw new ApiError('NOT_FOUND', 404, 'Election not found.');
 
-    const election = await getElection(id);
-    if (!election) throw new ApiError('NOT_FOUND', 404, 'Election not found.');
-
-    const { positions, turnout } = await getResults(id, { limit: 1 });
-
-    // Queue first (durable), then try to deliver. A Resend failure leaves the
-    // row pending for the next drain and still returns a useful status.
-    await enqueueEmail('final_results', id, {
-      title: election.title,
-      votingStart: election.voting_start ? new Date(election.voting_start).toISOString() : null,
-      votingEnd: election.voting_end ? new Date(election.voting_end).toISOString() : null,
-      turnout,
-      positions: positions.map((p) => ({
-        name: p.name,
-        candidates: p.candidates.map((c) => ({ name: c.name, votes: c.votes })),
-      })),
-    });
+    // Manual "send now": always queues a fresh copy, even if already sent.
+    await enqueueFinalResults(id, { force: true });
     await logAdminAction(admin, 'results.email.queued', { electionId: id });
 
     const drain = await flushOutbox();

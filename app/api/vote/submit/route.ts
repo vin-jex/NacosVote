@@ -1,8 +1,7 @@
 import { handle, fail, ok } from '@/lib/api';
 import { rateLimit } from '@/lib/redis';
 import { parseJson, submitSchema } from '@/lib/validation';
-import { castBallot, findVoterByMatric, getParticipation } from '@/lib/queries';
-import { namesMatch } from '@/lib/normalize';
+import { castBallot } from '@/lib/queries';
 import { flushOutbox } from '@/lib/email';
 import { log } from '@/lib/log';
 
@@ -25,19 +24,12 @@ export async function POST(req: Request) {
     const body = await parseJson(req, submitSchema);
     log.info('vote_submission_started', { requestId, electionId: body.electionId });
 
-    // Identity resolution (no eligibility decision leaks here beyond generic failure).
-    const voter = await findVoterByMatric(body.matricNumber);
-    if (!voter || !namesMatch(voter.name, body.name)) {
-      return fail('NOT_ELIGIBLE', 403, 'We could not verify your details.', requestId);
-    }
-    const participation = await getParticipation(body.electionId, voter.id);
-    if (!participation) {
-      return fail('NOT_ELIGIBLE', 403, 'You are not eligible for this election.', requestId);
-    }
-
+    // Eligibility (restricted vs open), the ballot cap, identity resolution and
+    // the one-vote claim all happen inside castBallot's single transaction.
     const result = await castBallot({
       electionId: body.electionId,
-      voterId: voter.id,
+      matricNumber: body.matricNumber,
+      name: body.name,
       idempotencyKey: body.idempotencyKey,
       selections: body.selections,
     });
@@ -45,20 +37,23 @@ export async function POST(req: Request) {
     switch (result.outcome) {
       case 'recorded':
         log.info('vote_submission_committed', { requestId, electionId: body.electionId });
-        // Best-effort: try to drain the outbox now. Never blocks the response,
-        // never affects the recorded vote.
         void flushOutbox().catch((err) =>
           log.error('results_email_failed', { requestId, err: String(err).slice(0, 200) }),
         );
         return ok({ status: 'recorded' }, { requestId });
 
       case 'duplicate':
-        // A replay of this exact submission. The first one is authoritative.
         log.info('vote_submission_duplicate', { requestId, electionId: body.electionId });
         return ok({ status: 'recorded', duplicate: true }, { requestId });
 
       case 'already-voted':
         return fail('ALREADY_VOTED', 409, 'A vote has already been recorded for you.', requestId);
+
+      case 'not-eligible':
+        return fail('NOT_ELIGIBLE', 403, 'We could not verify your details for this election.', requestId);
+
+      case 'capacity-full':
+        return fail('CAPACITY_FULL', 409, 'Voting for this election is full.', requestId);
 
       case 'not-open':
         return fail('ELECTION_CLOSED', 403, 'Voting is not open for this election.', requestId);

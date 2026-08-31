@@ -1,11 +1,13 @@
 import { pool, withTx, RollbackSignal } from './db';
-import { normalizeMatric } from './normalize';
+import { normalizeMatric, namesMatch } from './normalize';
 import { validateSelections, type BallotShape } from './ballot-rules';
 import type { ElectionStatus } from './election';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export type EligibilityMode = 'restricted' | 'open';
 
 export type Election = {
   id: number;
@@ -15,6 +17,9 @@ export type Election = {
   voting_start: Date | null;
   voting_end: Date | null;
   version: number;
+  eligibility_mode: EligibilityMode;
+  max_voters: number | null;
+  results_emailed_at: Date | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -47,12 +52,13 @@ export type ElectionSummary = Election & {
 // ---------------------------------------------------------------------------
 
 const ELECTION_COLS =
-  'id, title, description, status, voting_start, voting_end, version, created_at, updated_at';
+  'id, title, description, status, voting_start, voting_end, version, eligibility_mode, max_voters, results_emailed_at, created_at, updated_at';
 
 export async function listElections(): Promise<ElectionSummary[]> {
   const { rows } = await pool.query<ElectionSummary>(
     `SELECT e.id, e.title, e.description, e.status, e.voting_start, e.voting_end,
-            e.version, e.created_at, e.updated_at,
+            e.version, e.eligibility_mode, e.max_voters, e.results_emailed_at,
+            e.created_at, e.updated_at,
             COALESCE(ev.eligible_count, 0)::int AS eligible_count,
             COALESCE(ev.voted_count, 0)::int    AS voted_count
      FROM elections e
@@ -80,21 +86,42 @@ export async function getElection(id: number): Promise<Election | null> {
  * Authoritative open/closed check for the voting path, decided by the DATABASE
  * clock. Boundary: voting_start <= now() < voting_end.
  */
-export async function getElectionForVoting(
-  id: number,
-): Promise<{ id: number; title: string; voting_end: Date | null; is_open: boolean } | null> {
-  const { rows } = await pool.query<{
-    id: number;
-    title: string;
-    voting_end: Date | null;
-    is_open: boolean;
-  }>(
-    `SELECT id, title, voting_end,
-            (status = 'open'
-             AND voting_start IS NOT NULL AND voting_end IS NOT NULL
-             AND now() >= voting_start AND now() < voting_end) AS is_open
-     FROM elections WHERE id = $1`,
+export type ElectionForVoting = {
+  id: number;
+  title: string;
+  voting_end: Date | null;
+  is_open: boolean;
+  eligibility_mode: EligibilityMode;
+  max_voters: number | null;
+  ballots_cast: number;
+};
+
+export async function getElectionForVoting(id: number): Promise<ElectionForVoting | null> {
+  const { rows } = await pool.query<ElectionForVoting & { ballots_cast: string }>(
+    `SELECT e.id, e.title, e.voting_end, e.eligibility_mode, e.max_voters,
+            (e.status = 'open'
+             AND e.voting_start IS NOT NULL AND e.voting_end IS NOT NULL
+             AND now() >= e.voting_start AND now() < e.voting_end) AS is_open,
+            (SELECT count(*) FILTER (WHERE has_voted)
+             FROM election_voters WHERE election_id = e.id) AS ballots_cast
+     FROM elections e WHERE e.id = $1`,
     [id],
+  );
+  if (!rows[0]) return null;
+  return { ...rows[0], ballots_cast: Number(rows[0].ballots_cast) };
+}
+
+/** For the verify path: has this matric already registered / voted in this election? */
+export async function getParticipationByMatric(
+  electionId: number,
+  matricNumber: string,
+): Promise<{ registered_name: string; has_voted: boolean } | null> {
+  const { rows } = await pool.query<{ registered_name: string; has_voted: boolean }>(
+    `SELECT v.name AS registered_name, COALESCE(ev.has_voted, false) AS has_voted
+     FROM voters v
+     LEFT JOIN election_voters ev ON ev.voter_id = v.id AND ev.election_id = $1
+     WHERE v.matric_number = $2`,
+    [electionId, normalizeMatric(matricNumber)],
   );
   return rows[0] ?? null;
 }
@@ -144,15 +171,24 @@ export type UpdateElectionResult =
 export async function updateElection(
   id: number,
   expectedVersion: number,
-  patch: Partial<Pick<Election, 'title' | 'description' | 'status'>> & {
+  patch: Partial<Pick<Election, 'title' | 'description' | 'status' | 'eligibility_mode'>> & {
     voting_start?: string | null;
     voting_end?: string | null;
+    max_voters?: number | null;
   },
 ): Promise<UpdateElectionResult> {
   const sets: string[] = [];
   const values: unknown[] = [];
   let i = 1;
-  for (const key of ['title', 'description', 'status', 'voting_start', 'voting_end'] as const) {
+  for (const key of [
+    'title',
+    'description',
+    'status',
+    'voting_start',
+    'voting_end',
+    'eligibility_mode',
+    'max_voters',
+  ] as const) {
     if (key in patch) {
       sets.push(`${key} = $${i++}`);
       values.push((patch as Record<string, unknown>)[key]);
@@ -709,26 +745,44 @@ export type CastBallotResult =
   | { outcome: 'duplicate' }
   | { outcome: 'already-voted' }
   | { outcome: 'not-open' }
+  | { outcome: 'not-eligible' }
+  | { outcome: 'capacity-full' }
   | { outcome: 'invalid-ballot' };
 
 export async function castBallot(input: {
   electionId: number;
-  voterId: number;
+  matricNumber: string;
+  name: string;
   idempotencyKey: string;
   selections: { positionId: number; candidateId: number }[];
 }): Promise<CastBallotResult> {
+  const matric = normalizeMatric(input.matricNumber);
+  const name = input.name.trim();
   try {
     return await withTx<CastBallotResult>(
       async (c) => {
-        const el = await c.query<{ is_open: boolean }>(
+        const el = await c.query<{
+          is_open: boolean;
+          eligibility_mode: EligibilityMode;
+          max_voters: number | null;
+        }>(
           `SELECT (status = 'open'
                    AND voting_start IS NOT NULL AND voting_end IS NOT NULL
-                   AND now() >= voting_start AND now() < voting_end) AS is_open
+                   AND now() >= voting_start AND now() < voting_end) AS is_open,
+                  eligibility_mode, max_voters
            FROM elections WHERE id = $1`,
           [input.electionId],
         );
         if (el.rows.length === 0 || !el.rows[0].is_open) {
           throw new RollbackSignal('not-open');
+        }
+        const { eligibility_mode: mode, max_voters: maxVoters } = el.rows[0];
+
+        // Capped elections serialize here so the cap is exact under concurrency.
+        // The one-vote guarantee does NOT depend on this lock (that is the
+        // conditional UPDATE below); this only makes max_voters precise.
+        if (maxVoters != null) {
+          await c.query('SELECT pg_advisory_xact_lock($1)', [input.electionId]);
         }
 
         const idem = await c.query(
@@ -741,12 +795,64 @@ export async function castBallot(input: {
           return { outcome: 'duplicate' };
         }
 
+        // Resolve the voter for this election.
+        let voterId: number;
+        if (mode === 'open') {
+          // Register the matric on first sight; keep the first name it was given.
+          const ins = await c.query<{ id: number; name: string }>(
+            `INSERT INTO voters (matric_number, name) VALUES ($1, $2)
+             ON CONFLICT (matric_number) DO NOTHING
+             RETURNING id, name`,
+            [matric, name],
+          );
+          let row = ins.rows[0];
+          if (!row) {
+            const found = await c.query<{ id: number; name: string }>(
+              'SELECT id, name FROM voters WHERE matric_number = $1',
+              [matric],
+            );
+            row = found.rows[0];
+            if (!namesMatch(row.name, name)) throw new RollbackSignal('not-eligible');
+          }
+          voterId = row.id;
+          await c.query(
+            `INSERT INTO election_voters (election_id, voter_id) VALUES ($1, $2)
+             ON CONFLICT (election_id, voter_id) DO NOTHING`,
+            [input.electionId, voterId],
+          );
+        } else {
+          const found = await c.query<{ id: number; name: string; has_voted: boolean }>(
+            `SELECT v.id, v.name, ev.has_voted
+             FROM voters v
+             JOIN election_voters ev ON ev.voter_id = v.id AND ev.election_id = $1
+             WHERE v.matric_number = $2`,
+            [input.electionId, matric],
+          );
+          if (found.rows.length === 0 || !namesMatch(found.rows[0].name, name)) {
+            throw new RollbackSignal('not-eligible');
+          }
+          voterId = found.rows[0].id;
+        }
+
+        // Cap check: only blocks a NEW ballot, never a retry by someone already in.
+        if (maxVoters != null) {
+          const counts = await c.query<{ cast: string; mine: boolean | null }>(
+            `SELECT
+               (SELECT count(*) FILTER (WHERE has_voted) FROM election_voters WHERE election_id = $1) AS cast,
+               (SELECT has_voted FROM election_voters WHERE election_id = $1 AND voter_id = $2) AS mine`,
+            [input.electionId, voterId],
+          );
+          if (!counts.rows[0].mine && Number(counts.rows[0].cast) >= maxVoters) {
+            throw new RollbackSignal('capacity-full');
+          }
+        }
+
         const claim = await c.query<{ voter_id: number }>(
           `UPDATE election_voters
            SET has_voted = true, voted_at = now()
            WHERE election_id = $1 AND voter_id = $2 AND has_voted = false
            RETURNING voter_id`,
-          [input.electionId, input.voterId],
+          [input.electionId, voterId],
         );
         if (claim.rows.length === 0) throw new RollbackSignal('already-voted');
 
@@ -804,6 +910,10 @@ export async function castBallot(input: {
           return { outcome: 'not-open' };
         case 'already-voted':
           return { outcome: 'already-voted' };
+        case 'not-eligible':
+          return { outcome: 'not-eligible' };
+        case 'capacity-full':
+          return { outcome: 'capacity-full' };
         case 'invalid-ballot':
           return { outcome: 'invalid-ballot' };
       }
@@ -856,6 +966,66 @@ export async function enqueueEmail(
     [kind, electionId, JSON.stringify(payload)],
   );
   return rows[0].id;
+}
+
+/**
+ * Builds the final-results payload and queues it for delivery. Without `force`
+ * it is a no-op if results have already been emailed for this election (the
+ * `results_emailed_at` guard makes automatic send-on-close fire exactly once).
+ * `force` (the manual "send now" button) always queues a fresh copy.
+ */
+export async function enqueueFinalResults(
+  electionId: number,
+  opts: { force?: boolean } = {},
+): Promise<boolean> {
+  const election = await getElection(electionId);
+  if (!election) return false;
+
+  if (!opts.force) {
+    const claim = await pool.query(
+      `UPDATE elections SET results_emailed_at = now()
+       WHERE id = $1 AND results_emailed_at IS NULL
+       RETURNING id`,
+      [electionId],
+    );
+    if (claim.rows.length === 0) return false;
+  } else {
+    await pool.query('UPDATE elections SET results_emailed_at = now() WHERE id = $1', [electionId]);
+  }
+
+  const { positions, turnout } = await getResults(electionId, { limit: 1 });
+  const denominator =
+    election.eligibility_mode === 'open'
+      ? (election.max_voters ?? turnout.voted)
+      : turnout.total;
+
+  await enqueueEmail('final_results', electionId, {
+    title: election.title,
+    votingStart: election.voting_start ? new Date(election.voting_start).toISOString() : null,
+    votingEnd: election.voting_end ? new Date(election.voting_end).toISOString() : null,
+    turnout: { voted: turnout.voted, total: denominator },
+    positions: positions.map((p) => ({
+      name: p.name,
+      candidates: p.candidates.map((c) => ({ name: c.name, votes: c.votes })),
+    })),
+  });
+  return true;
+}
+
+/**
+ * Flips any election whose window has ended past `voting_end` to `closed`
+ * (server clock) and queues its results email. Idempotent: an election already
+ * `closed` or already emailed is skipped. Returns the ids that were just closed.
+ */
+export async function closeExpiredElections(): Promise<number[]> {
+  const { rows } = await pool.query<{ id: number }>(
+    `UPDATE elections
+     SET status = 'closed', version = version + 1, updated_at = now()
+     WHERE status = 'open' AND voting_end IS NOT NULL AND now() >= voting_end
+     RETURNING id`,
+  );
+  for (const r of rows) await enqueueFinalResults(r.id);
+  return rows.map((r) => r.id);
 }
 
 export async function claimPendingEmails(limit = 20): Promise<OutboxRow[]> {

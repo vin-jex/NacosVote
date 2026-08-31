@@ -33,6 +33,14 @@ CREATE TABLE elections (
   voting_start  timestamptz,
   voting_end    timestamptz,
   version       integer NOT NULL DEFAULT 1,
+  -- 'restricted': only voters on election_voters may vote (admin loads the list).
+  -- 'open': anyone who gives a matric number + full name may vote; the identity
+  --         is recorded (for later audit) and locked to that matric.
+  eligibility_mode text NOT NULL DEFAULT 'restricted'
+                   CHECK (eligibility_mode IN ('restricted', 'open')),
+  -- Optional hard cap on the number of ballots cast (enforced in the vote
+  -- transaction under a per-election advisory lock). NULL = no cap.
+  max_voters    integer CHECK (max_voters IS NULL OR max_voters > 0),
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   -- end strictly after start (invariant: impossible windows rejected by the DB)
