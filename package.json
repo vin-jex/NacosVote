@@ -1,0 +1,50 @@
+{
+  "name": "nacosvote",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.8.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "seed": "tsx scripts/seed.ts",
+    "db:push": "tsx scripts/db-push.ts",
+    "hash-password": "tsx scripts/hash-password.ts",
+    "set-admin-password": "tsx scripts/set-admin-password.ts",
+    "test": "vitest run",
+    "load-test": "tsx scripts/load-test.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "0.9.4",
+    "bcryptjs": "2.4.3",
+    "ioredis": "5.4.1",
+    "next": "14.2.5",
+    "next-auth": "4.24.7",
+    "pg": "8.12.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "resend": "3.4.0",
+    "ws": "8.18.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "20.14.15",
+    "@types/pg": "8.11.6",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "@types/ws": "8.5.12",
+    "autoprefixer": "10.4.20",
+    "dotenv": "16.4.5",
+    "postcss": "8.4.41",
+    "tailwindcss": "3.4.10",
+    "tsx": "4.17.0",
+    "typescript": "5.5.4",
+    "vitest": "2.0.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
