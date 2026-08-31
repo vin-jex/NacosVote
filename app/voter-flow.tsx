@@ -9,7 +9,7 @@ import { Brand } from './components/brand';
 
 type OpenElection = { id: number; title: string; votingEnd: string | null };
 type UpcomingElection = { id: number; title: string; votingStart: string | null };
-type PublishedResult = { id: number; title: string; votingEnd: string | null };
+type PublishedResult = { id: number; title: string; status: string; votingEnd: string | null };
 type Candidate = { id: number; name: string };
 type Position = { id: number; name: string; candidates: Candidate[] };
 type Step = 'pick' | 'identify' | 'confirm' | 'ballot' | 'done' | 'uncertain';
@@ -49,8 +49,9 @@ function opensLabel(iso: string | null): string {
 function UpcomingList({ upcoming }: { upcoming: UpcomingElection[] }) {
   if (upcoming.length === 0) return null;
   return (
-    <section className="mt-8">
-      <p className="kicker">Coming up</p>
+    <section className="mt-10">
+      <p className="kicker text-gold">Upcoming elections</p>
+      <p className="field-hint mt-0.5">Announced but not open yet. You cannot vote in these.</p>
       <ul className="mt-2 border-t border-line">
         {upcoming.map((e) => (
           <li key={e.id} className="border-b border-line py-3">
@@ -59,7 +60,6 @@ function UpcomingList({ upcoming }: { upcoming: UpcomingElection[] }) {
           </li>
         ))}
       </ul>
-      <p className="field-hint">You will be able to vote once an election opens. Check back then.</p>
     </section>
   );
 }
@@ -67,15 +67,25 @@ function UpcomingList({ upcoming }: { upcoming: UpcomingElection[] }) {
 function PublishedResultsList({ results }: { results: PublishedResult[] }) {
   if (results.length === 0) return null;
   return (
-    <section className="mt-8">
-      <p className="kicker">Published results</p>
+    <section className="mt-10">
+      <p className="kicker text-accent">Election results</p>
+      <p className="field-hint mt-0.5">Vote tallies from elections. Tap one to open it.</p>
       <ul className="mt-2 border-t border-line">
         {results.map((e) => (
           <li key={e.id} className="border-b border-line py-3">
-            <a href={`/results/${e.id}`} className="font-serif text-base no-underline hover:underline">
+            <a
+              href={`/results/${e.id}`}
+              className="font-serif text-base font-semibold text-accent no-underline hover:underline"
+            >
               {e.title}
             </a>
-            {e.votingEnd && <p className="meta">Closed {fmtTime(e.votingEnd)}</p>}
+            <p className="meta">
+              {e.status === 'closed'
+                ? e.votingEnd
+                  ? `Final, closed ${fmtTime(e.votingEnd)}`
+                  : 'Final'
+                : 'Live, voting still open'}
+            </p>
           </li>
         ))}
       </ul>

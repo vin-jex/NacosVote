@@ -102,6 +102,7 @@ export const patchElectionSchema = z
     eligibilityMode: z.enum(['restricted', 'open']).optional(),
     maxVoters: z.number().int().positive().max(1_000_000).nullable().optional(),
     resultsPublic: z.boolean().optional(),
+    resultsLive: z.boolean().optional(),
   })
   .strict();
 

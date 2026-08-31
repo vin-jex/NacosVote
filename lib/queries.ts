@@ -20,6 +20,7 @@ export type Election = {
   eligibility_mode: EligibilityMode;
   max_voters: number | null;
   results_public: boolean;
+  results_live: boolean;
   results_emailed_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -53,12 +54,13 @@ export type ElectionSummary = Election & {
 // ---------------------------------------------------------------------------
 
 const ELECTION_COLS =
-  'id, title, description, status, voting_start, voting_end, version, eligibility_mode, max_voters, results_public, results_emailed_at, created_at, updated_at';
+  'id, title, description, status, voting_start, voting_end, version, eligibility_mode, max_voters, results_public, results_live, results_emailed_at, created_at, updated_at';
 
 export async function listElections(): Promise<ElectionSummary[]> {
   const { rows } = await pool.query<ElectionSummary>(
     `SELECT e.id, e.title, e.description, e.status, e.voting_start, e.voting_end,
-            e.version, e.eligibility_mode, e.max_voters, e.results_public, e.results_emailed_at,
+            e.version, e.eligibility_mode, e.max_voters, e.results_public, e.results_live,
+            e.results_emailed_at,
             e.created_at, e.updated_at,
             COALESCE(ev.eligible_count, 0)::int AS eligible_count,
             COALESCE(ev.voted_count, 0)::int    AS voted_count
@@ -191,7 +193,10 @@ export async function updateElection(
   id: number,
   expectedVersion: number,
   patch: Partial<
-    Pick<Election, 'title' | 'description' | 'status' | 'eligibility_mode' | 'results_public'>
+    Pick<
+      Election,
+      'title' | 'description' | 'status' | 'eligibility_mode' | 'results_public' | 'results_live'
+    >
   > & {
     voting_start?: string | null;
     voting_end?: string | null;
@@ -210,6 +215,7 @@ export async function updateElection(
     'eligibility_mode',
     'max_voters',
     'results_public',
+    'results_live',
   ] as const) {
     if (key in patch) {
       sets.push(`${key} = $${i++}`);
@@ -711,11 +717,17 @@ export async function getPublicResults(electionId: number): Promise<{
  */
 export async function listPublishedResultsElections(
   limit = 20,
-): Promise<{ id: number; title: string; voting_end: Date | null }[]> {
-  const { rows } = await pool.query<{ id: number; title: string; voting_end: Date | null }>(
-    `SELECT id, title, voting_end FROM elections
-     WHERE status = 'closed' AND results_public = true
-     ORDER BY voting_end DESC NULLS LAST, updated_at DESC
+): Promise<{ id: number; title: string; status: ElectionStatus; voting_end: Date | null }[]> {
+  const { rows } = await pool.query<{
+    id: number;
+    title: string;
+    status: ElectionStatus;
+    voting_end: Date | null;
+  }>(
+    `SELECT id, title, status, voting_end FROM elections
+     WHERE results_public = true
+       AND (status = 'closed' OR (results_live = true AND status = 'open'))
+     ORDER BY (status = 'closed') ASC, voting_end DESC NULLS LAST, updated_at DESC
      LIMIT $1`,
     [limit],
   );

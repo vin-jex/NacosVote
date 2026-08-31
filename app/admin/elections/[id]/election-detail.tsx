@@ -29,6 +29,7 @@ type Detail = {
   eligibilityMode: 'restricted' | 'open';
   maxVoters: number | null;
   resultsPublic: boolean;
+  resultsLive: boolean;
   ballotsCast: number;
   ballot: Position[];
   turnout: { voted: number; total: number };
@@ -168,7 +169,9 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
   const [end, setEnd] = useState(toLocalInput(detail.votingEnd));
   const [mode, setMode] = useState<'restricted' | 'open'>(detail.eligibilityMode);
   const [maxVoters, setMaxVoters] = useState(detail.maxVoters != null ? String(detail.maxVoters) : '');
-  const [resultsPublic, setResultsPublic] = useState(detail.resultsPublic);
+  const [resultsVis, setResultsVis] = useState<'private' | 'on_close' | 'live'>(
+    detail.resultsLive ? 'live' : detail.resultsPublic ? 'on_close' : 'private',
+  );
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -291,30 +294,35 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
         to that matric so the roll can be audited afterward. The limit counts ballots actually cast.
       </p>
 
-      <p className="position-title mt-8">Results</p>
+      <p className="position-title mt-8">Public results</p>
       <hr className="rule mb-4 mt-2" />
-      <label className="flex items-start gap-3">
-        <input
-          type="checkbox"
-          className="mt-1 h-4 w-4 accent-accent"
-          checked={resultsPublic}
-          onChange={(e) => setResultsPublic(e.target.checked)}
-        />
-        <span className="text-sm">
-          Publish results publicly. Once the election is <strong>closed</strong>, its aggregate tally
-          appears at <code>/results/{detail.id}</code> and in the &quot;Published results&quot; list on
-          the voter home page. Uncheck any time to remove it. Individual voters and their choices are
-          never shown.
-        </span>
+      <label htmlFor="s-results" className="field-label">
+        Who can see the results
       </label>
-      {resultsPublic && detail.status === 'closed' && (
-        <p className="field-hint">
-          Live now:{' '}
-          <Link href={`/results/${detail.id}`} target="_blank" rel="noreferrer">
-            /results/{detail.id}
-          </Link>
-        </p>
-      )}
+      <select
+        id="s-results"
+        className="field-input"
+        value={resultsVis}
+        onChange={(e) => setResultsVis(e.target.value as 'private' | 'on_close' | 'live')}
+      >
+        <option value="private">Private, admins only</option>
+        <option value="on_close">Publish automatically when voting ends</option>
+        <option value="live">Publish live, even while voting is open</option>
+      </select>
+      <p className="field-hint">
+        Published results are the aggregate tally only (candidates, counts, turnout) at{' '}
+        <code>/results/{detail.id}</code> and in the results list on the voter home page. Individual
+        voters and their choices are never shown. Change this any time.
+      </p>
+      {resultsVis !== 'private' &&
+        (detail.status === 'closed' || (resultsVis === 'live' && detail.status === 'open')) && (
+          <p className="field-hint">
+            Live now:{' '}
+            <a href={`/results/${detail.id}`} target="_blank" rel="noreferrer">
+              /results/{detail.id}
+            </a>
+          </p>
+        )}
 
       <hr className="rule my-6" />
 
@@ -329,7 +337,8 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
               votingEnd: end ? new Date(end).toISOString() : null,
               eligibilityMode: mode,
               maxVoters: maxVoters.trim() === '' ? null : Math.max(1, Math.floor(Number(maxVoters))),
-              resultsPublic,
+              resultsPublic: resultsVis !== 'private',
+              resultsLive: resultsVis === 'live',
             })
           }
         >
@@ -891,7 +900,7 @@ function ResultsTab({
   }
   if (!data) return null;
 
-  const noVotes = data.turnout.voted === 0;
+  const noVotes = data.positions.every((p) => p.candidates.every((c) => c.votes === 0));
 
   return (
     <div>
@@ -917,9 +926,12 @@ function ResultsTab({
           message="Election results will appear once votes are submitted."
         />
       ) : (
-        data.positions.map((p) => (
+        data.positions.map((p) => {
+          const cast = p.candidates.reduce((s, c) => s + c.votes, 0);
+          return (
           <section key={p.id} className="border-t border-line py-5 first:border-t-0">
             <h3 className="position-title text-base">{p.name}</h3>
+            <p className="field-hint">{cast} vote{cast === 1 ? '' : 's'} cast for this position</p>
             {p.candidates.length === 0 ? (
               <p className="meta mt-2">No candidates.</p>
             ) : (
@@ -928,14 +940,20 @@ function ResultsTab({
                   {p.candidates.map((c) => (
                     <tr key={c.id} className="border-b border-line last:border-b-0">
                       <td className="py-2">{c.name}</td>
-                      <td className="py-2 text-right font-semibold tabular-nums">{c.votes}</td>
+                      <td className="whitespace-nowrap py-2 text-right tabular-nums">
+                        <span className="font-semibold">{c.votes}</span>
+                        <span className="ml-2 text-ink/60">
+                          {(cast ? (c.votes / cast) * 100 : 0).toFixed(1)}%
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
           </section>
-        ))
+          );
+        })
       )}
 
       <p className="position-title mt-8">Voter participation</p>
