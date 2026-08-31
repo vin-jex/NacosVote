@@ -10,9 +10,12 @@ export default async function AdminHome() {
   const email = await requireAdminPage();
   return (
     <main>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <Brand title="Election administration" />
-        <nav className="flex items-center gap-4 text-sm">
+      <Brand title="Election administration" />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <p className="meta">
+          Signed in as <span className="font-semibold text-ink">{email}</span>
+        </p>
+        <nav className="flex flex-wrap items-center gap-3 text-sm">
           <Link href="/admin/voters" className="font-semibold no-underline hover:underline">
             Voter registry
           </Link>
@@ -24,10 +27,7 @@ export default async function AdminHome() {
           </Link>
         </nav>
       </div>
-      <p className="meta -mt-2">
-        Signed in as <span className="font-semibold text-ink">{email}</span>
-      </p>
-      <hr className="rule mb-6 mt-3" />
+      <hr className="rule mb-6" />
       <ElectionsList />
     </main>
   );

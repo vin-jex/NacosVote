@@ -40,9 +40,12 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /* The app never scrolls horizontally; contain any stray wide child. */
+    overflow-x: clip;
   }
   body {
     @apply bg-paper text-ink font-sans antialiased;
+    overflow-x: clip;
   }
   h1,
   h2,
@@ -61,6 +64,14 @@
   textarea,
   button {
     font: inherit;
+  }
+  /* Native controls (esp. datetime-local on iOS) have an intrinsic min width
+     that ignores width:100% and pushes the layout wider than the viewport. */
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+    min-width: 0;
   }
 }
 
@@ -109,8 +120,8 @@
     @apply mt-1 text-sm text-ink/65;
   }
   .field-input {
-    @apply block min-h-[44px] w-full rounded border border-line bg-surface px-3 py-2 text-base
-      text-ink placeholder:text-ink/40 focus:border-accent;
+    @apply block min-h-[44px] w-full min-w-0 max-w-full rounded border border-line bg-surface
+      px-3 py-2 text-base text-ink placeholder:text-ink/40 focus:border-accent;
   }
   textarea.field-input {
     @apply min-h-[88px] py-2 leading-relaxed;

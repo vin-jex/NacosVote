@@ -13,16 +13,27 @@ type Candidate = { id: number; name: string };
 type Position = { id: number; name: string; candidates: Candidate[] };
 type Step = 'pick' | 'identify' | 'confirm' | 'ballot' | 'done' | 'uncertain';
 
+// Always 12-hour with AM/PM, regardless of the device's clock setting.
+const DATE_TIME = {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+} as const;
+const CLOCK = { hour: 'numeric', minute: '2-digit', hour12: true } as const;
+
 function fmtTime(iso: string | null): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return new Date(iso).toLocaleString(undefined, DATE_TIME);
 }
 
 function opensLabel(iso: string | null): string {
   if (!iso) return 'Opens soon';
   const start = new Date(iso);
   const diffMs = start.getTime() - Date.now();
-  const time = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const time = start.toLocaleTimeString(undefined, CLOCK);
   if (diffMs <= 0) return `Opens shortly, ${time}`;
   const hours = diffMs / 3_600_000;
   if (hours < 1) return `Opens in ${Math.max(1, Math.round(diffMs / 60_000))} min`;

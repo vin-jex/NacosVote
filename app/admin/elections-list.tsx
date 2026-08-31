@@ -18,7 +18,16 @@ type Row = {
 };
 
 function fmt(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set';
+  return iso
+    ? new Date(iso).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : 'Not set';
 }
 
 export default function ElectionsList() {

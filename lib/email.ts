@@ -28,8 +28,26 @@ function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
+// Emails are read by admins in Nigeria; render times in a fixed zone with AM/PM
+// and label it, so a UTC server clock does not confuse anyone. Override with
+// EMAIL_TIMEZONE (an IANA name).
+const EMAIL_TZ = process.env.EMAIL_TIMEZONE || 'Africa/Lagos';
+
+function fmtInTz(d: Date): string {
+  const s = d.toLocaleString('en-US', {
+    timeZone: EMAIL_TZ,
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${s} (${EMAIL_TZ})`;
+}
+
 function fmt(d: string | null): string {
-  return d ? new Date(d).toLocaleString() : 'not set';
+  return d ? fmtInTz(new Date(d)) : 'not set';
 }
 
 function logoUrl(): string | null {
@@ -164,7 +182,7 @@ export async function sendPasswordChangedEmail(adminEmail: string): Promise<void
   const resend = client();
   if (!resend) return;
   const recipients = new Set([adminEmail, ...adminAddresses()]);
-  const when = new Date().toLocaleString();
+  const when = fmtInTz(new Date());
   const html = shell('An admin password was changed', `
     <p style="margin:0 0 12px;">The password for <strong>${esc(adminEmail)}</strong> was just changed.</p>
     <p style="margin:0 0 12px;color:${C.muted};">Time: ${esc(when)}</p>

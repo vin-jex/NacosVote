@@ -35,7 +35,14 @@ type Tab = 'settings' | 'ballot' | 'voters' | 'results';
 
 function fmt(iso: string | null): string {
   return iso
-    ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    ? new Date(iso).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
     : 'Not set';
 }
 function toLocalInput(iso: string | null): string {
