@@ -6,6 +6,7 @@ import { effectiveStatus } from '@/lib/election';
 import { Brand } from '@/app/components/brand';
 import { StatusBadge } from '@/app/components/ui';
 import { ReviewSummary } from '@/app/components/review-summary';
+import { OfficialResult } from '@/app/components/official-result';
 import PrintButton from '@/app/components/print-button';
 
 export const dynamic = 'force-dynamic';
@@ -60,6 +61,11 @@ export default async function PrintableResults({ params }: { params: { id: strin
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
 
       <ReviewSummary review={data.review} ballots={data.turnout.voted} />
+
+      {data.official && <OfficialResult official={data.official} />}
+      {data.official && (
+        <p className="kicker mt-10 text-ink/50">Ballot-box tally (anonymous, for audit)</p>
+      )}
 
       {data.positions.every((p) => p.candidates.every((c) => c.votes === 0)) ? (
         <p className="section-title mt-6">No votes were recorded.</p>

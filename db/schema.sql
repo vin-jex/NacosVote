@@ -106,14 +106,29 @@ CREATE TABLE election_voters (
 -- an open-mode election. Same class of data as election_voters (who took part),
 -- never linked to a votes row.
 CREATE TABLE vote_confirmations (
-  id            bigserial PRIMARY KEY,
-  election_id   bigint NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
-  name          text NOT NULL,
-  matric_number text,
-  created_at    timestamptz NOT NULL DEFAULT now()
+  id              bigserial PRIMARY KEY,
+  election_id     bigint NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+  name            text NOT NULL,
+  matric_number   text,
+  confirmed_valid boolean NOT NULL DEFAULT false,
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX vote_confirmations_matric_uq
   ON vote_confirmations (election_id, matric_number) WHERE matric_number IS NOT NULL;
+
+-- Who each confirmed person says they voted for. Forms the OFFICIAL tally for a
+-- confirmation-reconciled open-mode election; the anonymous votes table stays as
+-- an audit reference.
+CREATE TABLE vote_declarations (
+  id              bigserial PRIMARY KEY,
+  election_id     bigint NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+  confirmation_id bigint NOT NULL REFERENCES vote_confirmations(id) ON DELETE CASCADE,
+  position_id     bigint NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+  candidate_id    bigint NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (confirmation_id, position_id)
+);
+CREATE INDEX vote_declarations_election_idx ON vote_declarations (election_id);
 
 -- ---------------------------------------------------------------------------
 -- The ballot box
