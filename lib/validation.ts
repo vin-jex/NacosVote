@@ -101,10 +101,15 @@ export const patchElectionSchema = z
     votingEnd: isoDateTime.optional(),
     eligibilityMode: z.enum(['restricted', 'open']).optional(),
     maxVoters: z.number().int().positive().max(1_000_000).nullable().optional(),
-    resultsPublic: z.boolean().optional(),
-    resultsLive: z.boolean().optional(),
+    resultsVisibility: z.enum(['private', 'on_close', 'live']).optional(),
+    ballotMode: z.enum(['secret', 'attributable']).optional(),
   })
   .strict();
+
+export const ballotValiditySchema = z.object({
+  invalid: z.boolean(),
+  reason: z.string().trim().max(300).optional(),
+});
 
 export const addPositionSchema = z
   .object({
