@@ -8,6 +8,8 @@ import type { ElectionStatus } from './election';
 // ---------------------------------------------------------------------------
 
 export type EligibilityMode = 'restricted' | 'open';
+export type BallotMode = 'secret' | 'attributable';
+export type ResultsVisibility = 'private' | 'on_close' | 'live';
 
 export type Election = {
   id: number;
@@ -19,8 +21,8 @@ export type Election = {
   version: number;
   eligibility_mode: EligibilityMode;
   max_voters: number | null;
-  results_public: boolean;
-  results_live: boolean;
+  ballot_mode: BallotMode;
+  results_visibility: ResultsVisibility;
   results_emailed_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -54,13 +56,13 @@ export type ElectionSummary = Election & {
 // ---------------------------------------------------------------------------
 
 const ELECTION_COLS =
-  'id, title, description, status, voting_start, voting_end, version, eligibility_mode, max_voters, results_public, results_live, results_emailed_at, created_at, updated_at';
+  'id, title, description, status, voting_start, voting_end, version, eligibility_mode, max_voters, ballot_mode, results_visibility, results_emailed_at, created_at, updated_at';
 
 export async function listElections(): Promise<ElectionSummary[]> {
   const { rows } = await pool.query<ElectionSummary>(
     `SELECT e.id, e.title, e.description, e.status, e.voting_start, e.voting_end,
-            e.version, e.eligibility_mode, e.max_voters, e.results_public, e.results_live,
-            e.results_emailed_at,
+            e.version, e.eligibility_mode, e.max_voters, e.ballot_mode,
+            e.results_visibility, e.results_emailed_at,
             e.created_at, e.updated_at,
             COALESCE(ev.eligible_count, 0)::int AS eligible_count,
             COALESCE(ev.voted_count, 0)::int    AS voted_count
@@ -195,7 +197,12 @@ export async function updateElection(
   patch: Partial<
     Pick<
       Election,
-      'title' | 'description' | 'status' | 'eligibility_mode' | 'results_public' | 'results_live'
+      | 'title'
+      | 'description'
+      | 'status'
+      | 'eligibility_mode'
+      | 'ballot_mode'
+      | 'results_visibility'
     >
   > & {
     voting_start?: string | null;
@@ -214,8 +221,8 @@ export async function updateElection(
     'voting_end',
     'eligibility_mode',
     'max_voters',
-    'results_public',
-    'results_live',
+    'ballot_mode',
+    'results_visibility',
   ] as const) {
     if (key in patch) {
       sets.push(`${key} = $${i++}`);
@@ -651,6 +658,52 @@ export async function getParticipation(
 // Results & turnout
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-position candidate tally. Counts from `votes` (secret ballots) OR
+ * `attributed_votes` excluding invalidated ones (attributable ballots). An
+ * election only ever writes to one of the two, so the union just works. Zero
+ * candidates are included.
+ */
+async function positionTally(electionId: number): Promise<ResultsPosition[]> {
+  const { rows } = await pool.query<{
+    position_id: number;
+    position_name: string;
+    candidate_id: number | null;
+    candidate_name: string | null;
+    votes: string;
+  }>(
+    `SELECT p.id AS position_id, p.name AS position_name,
+            c.id AS candidate_id, c.name AS candidate_name,
+            COALESCE(sum(tv.n), 0) AS votes
+     FROM election_positions ep
+     JOIN positions p ON p.id = ep.position_id
+     LEFT JOIN candidates c ON c.position_id = p.id
+     LEFT JOIN (
+       SELECT candidate_id, count(*)::int AS n FROM votes
+       WHERE election_id = $1 GROUP BY candidate_id
+       UNION ALL
+       SELECT candidate_id, count(*)::int AS n FROM attributed_votes
+       WHERE election_id = $1 AND NOT invalidated GROUP BY candidate_id
+     ) tv ON tv.candidate_id = c.id
+     WHERE ep.election_id = $1
+     GROUP BY ep.display_order, p.id, p.name, c.id, c.name, c.display_order
+     ORDER BY ep.display_order, p.id, c.display_order, c.id`,
+    [electionId],
+  );
+  const byId = new Map<number, ResultsPosition>();
+  for (const r of rows) {
+    let pos = byId.get(r.position_id);
+    if (!pos) {
+      pos = { id: r.position_id, name: r.position_name, candidates: [] };
+      byId.set(r.position_id, pos);
+    }
+    if (r.candidate_id != null) {
+      pos.candidates.push({ id: r.candidate_id, name: r.candidate_name!, votes: Number(r.votes) });
+    }
+  }
+  return [...byId.values()];
+}
+
 export async function getTurnout(electionId: number): Promise<Turnout> {
   const { rows } = await pool.query<{ voted: string; total: string }>(
     `SELECT count(*) FILTER (WHERE has_voted) AS voted, count(*) AS total
@@ -749,51 +802,14 @@ export async function getPublicResults(electionId: number): Promise<{
   const el = await getElection(electionId);
   if (!el) return null;
 
-  const { rows } = await pool.query<{
-    position_id: number;
-    position_name: string;
-    candidate_id: number | null;
-    candidate_name: string | null;
-    votes: string;
-  }>(
-    `SELECT p.id AS position_id, p.name AS position_name,
-            c.id AS candidate_id, c.name AS candidate_name,
-            count(v.id) AS votes
-     FROM election_positions ep
-     JOIN positions p ON p.id = ep.position_id
-     LEFT JOIN candidates c ON c.position_id = p.id
-     LEFT JOIN votes v ON v.candidate_id = c.id AND v.election_id = ep.election_id
-     WHERE ep.election_id = $1
-     GROUP BY ep.display_order, p.id, p.name, c.id, c.name, c.display_order
-     ORDER BY ep.display_order, p.id, c.display_order, c.id`,
-    [electionId],
-  );
-
-  const byId = new Map<number, ResultsPosition>();
-  for (const r of rows) {
-    let pos = byId.get(r.position_id);
-    if (!pos) {
-      pos = { id: r.position_id, name: r.position_name, candidates: [] };
-      byId.set(r.position_id, pos);
-    }
-    if (r.candidate_id != null) {
-      pos.candidates.push({ id: r.candidate_id, name: r.candidate_name!, votes: Number(r.votes) });
-    }
-  }
-
+  const positions = await positionTally(electionId);
   const raw = await getTurnout(electionId);
-  const total =
-    el.eligibility_mode === 'open' ? (el.max_voters ?? raw.voted) : raw.total;
+  const total = el.eligibility_mode === 'open' ? (el.max_voters ?? raw.voted) : raw.total;
   const percent = total === 0 ? 0 : (raw.voted / total) * 100;
   const review = await getReviewCounts(electionId);
   const official = await getDeclarationTally(electionId);
 
-  return {
-    positions: [...byId.values()],
-    turnout: { voted: raw.voted, total, percent },
-    review,
-    official,
-  };
+  return { positions, turnout: { voted: raw.voted, total, percent }, review, official };
 }
 
 /**
@@ -810,8 +826,8 @@ export async function listPublishedResultsElections(
     voting_end: Date | null;
   }>(
     `SELECT id, title, status, voting_end FROM elections
-     WHERE results_public = true
-       AND (status = 'closed' OR (results_live = true AND status = 'open'))
+     WHERE results_visibility <> 'private'
+       AND (status = 'closed' OR (results_visibility = 'live' AND status = 'open'))
      ORDER BY (status = 'closed') ASC, voting_end DESC NULLS LAST, updated_at DESC
      LIMIT $1`,
     [limit],
@@ -827,48 +843,21 @@ export async function getResults(
   turnout: Turnout;
   review: ReviewCounts;
   official: OfficialTally | null;
+  attributable: boolean;
   voters: {
     id: number;
     matric_number: string;
     name: string;
     voted: boolean;
     review: 'valid' | 'invalid' | null;
+    choice: string | null; // attributable elections only: the candidate(s) they picked
   }[];
   participationTotal: number;
 }> {
-  const { rows } = await pool.query<{
-    position_id: number;
-    position_name: string;
-    candidate_id: number | null;
-    candidate_name: string | null;
-    votes: string;
-  }>(
-    `SELECT p.id AS position_id, p.name AS position_name,
-            c.id AS candidate_id, c.name AS candidate_name,
-            count(v.id) AS votes
-     FROM election_positions ep
-     JOIN positions p ON p.id = ep.position_id
-     LEFT JOIN candidates c ON c.position_id = p.id
-     LEFT JOIN votes v ON v.candidate_id = c.id AND v.election_id = ep.election_id
-     WHERE ep.election_id = $1
-     GROUP BY ep.display_order, p.id, p.name, c.id, c.name, c.display_order
-     ORDER BY ep.display_order, p.id, c.display_order, c.id`,
-    [electionId],
-  );
-
-  const byId = new Map<number, ResultsPosition>();
-  for (const r of rows) {
-    let pos = byId.get(r.position_id);
-    if (!pos) {
-      pos = { id: r.position_id, name: r.position_name, candidates: [] };
-      byId.set(r.position_id, pos);
-    }
-    if (r.candidate_id != null) {
-      pos.candidates.push({ id: r.candidate_id, name: r.candidate_name!, votes: Number(r.votes) });
-    }
-  }
-
+  const positions = await positionTally(electionId);
   const turnout = await getTurnout(electionId);
+  const el = await getElection(electionId);
+  const attributable = el?.ballot_mode === 'attributable';
 
   const limit = Math.min(Math.max(participation.limit ?? 50, 1), 200);
   const offset = Math.max(participation.offset ?? 0, 0);
@@ -885,8 +874,12 @@ export async function getResults(
     has_voted: boolean;
     confirmed_valid: boolean;
     invalidated: boolean;
+    choice: string | null;
   }>(
-    `SELECT v.id, v.matric_number, v.name, ev.has_voted, ev.confirmed_valid, ev.invalidated
+    `SELECT v.id, v.matric_number, v.name, ev.has_voted, ev.confirmed_valid, ev.invalidated,
+            (SELECT string_agg(ca.name, ', ' ORDER BY ca.name)
+             FROM attributed_votes av JOIN candidates ca ON ca.id = av.candidate_id
+             WHERE av.election_id = ev.election_id AND av.voter_id = v.id) AS choice
      FROM election_voters ev JOIN voters v ON v.id = ev.voter_id
      WHERE ev.election_id = $1${filter}
      ORDER BY v.name
@@ -900,10 +893,11 @@ export async function getResults(
   );
 
   return {
-    positions: [...byId.values()],
+    positions,
     turnout,
     review: await getReviewCounts(electionId),
     official: await getDeclarationTally(electionId),
+    attributable,
     participationTotal: Number(totalRes.rows[0].count),
     voters: voterRows.map((v) => ({
       id: v.id,
@@ -911,8 +905,38 @@ export async function getResults(
       name: v.name,
       voted: v.has_voted,
       review: v.confirmed_valid ? ('valid' as const) : v.invalidated ? ('invalid' as const) : null,
+      choice: attributable ? v.choice : null,
     })),
   };
+}
+
+/**
+ * Invalidate (or restore) one voter's attributable ballot for an election. Sets
+ * both the participation flag and the attributed_votes rows, so the tally drops
+ * that ballot. No effect on secret-ballot elections' vote counts.
+ */
+export async function setBallotValidity(
+  electionId: number,
+  voterId: number,
+  invalid: boolean,
+  reason?: string,
+): Promise<void> {
+  await withTx(async (c) => {
+    await c.query(
+      `UPDATE election_voters
+       SET invalidated = $3, invalid_reason = $4,
+           invalidated_at = CASE WHEN $3 THEN now() ELSE NULL END,
+           confirmed_valid = CASE WHEN $3 THEN false ELSE confirmed_valid END
+       WHERE election_id = $1 AND voter_id = $2`,
+      [electionId, voterId, invalid, invalid ? (reason ?? 'invalidated by admin') : null],
+    );
+    await c.query(
+      `UPDATE attributed_votes
+       SET invalidated = $3, invalid_reason = $4
+       WHERE election_id = $1 AND voter_id = $2`,
+      [electionId, voterId, invalid, invalid ? (reason ?? 'invalidated by admin') : null],
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -965,11 +989,12 @@ export async function castBallot(input: {
           is_open: boolean;
           eligibility_mode: EligibilityMode;
           max_voters: number | null;
+          ballot_mode: BallotMode;
         }>(
           `SELECT (status = 'open'
                    AND voting_start IS NOT NULL AND voting_end IS NOT NULL
                    AND now() >= voting_start AND now() < voting_end) AS is_open,
-                  eligibility_mode, max_voters
+                  eligibility_mode, max_voters, ballot_mode
            FROM elections WHERE id = $1`,
           [input.electionId],
         );
@@ -977,6 +1002,7 @@ export async function castBallot(input: {
           throw new RollbackSignal('not-open');
         }
         const { eligibility_mode: mode, max_voters: maxVoters } = el.rows[0];
+        const attributable = el.rows[0].ballot_mode === 'attributable';
 
         // Capped elections serialize here so the cap is exact under concurrency.
         // The one-vote guarantee does NOT depend on this lock (that is the
@@ -1074,13 +1100,26 @@ export async function castBallot(input: {
         const validation = validateSelections(shape, input.selections);
         if (!validation.ok) throw new RollbackSignal('invalid-ballot');
 
-        // Randomise insert order so row id / created_at can't hint at ballot shape.
-        const shuffled = [...validation.candidateIds].sort(() => Math.random() - 0.5);
-        for (const candidateId of shuffled) {
-          await c.query('INSERT INTO votes (election_id, candidate_id) VALUES ($1, $2)', [
-            input.electionId,
-            candidateId,
-          ]);
+        if (attributable) {
+          // Attributable ballot: store the choice WITH the voter so organisers
+          // can audit / invalidate specific ballots. Not a secret ballot.
+          for (const s of input.selections) {
+            await c.query(
+              `INSERT INTO attributed_votes (election_id, voter_id, position_id, candidate_id)
+               VALUES ($1, $2, $3, $4)`,
+              [input.electionId, voterId, s.positionId, s.candidateId],
+            );
+          }
+        } else {
+          // Secret ballot: only (election, candidate). Randomise insert order so
+          // row id / created_at can't hint at ballot shape.
+          const shuffled = [...validation.candidateIds].sort(() => Math.random() - 0.5);
+          for (const candidateId of shuffled) {
+            await c.query('INSERT INTO votes (election_id, candidate_id) VALUES ($1, $2)', [
+              input.electionId,
+              candidateId,
+            ]);
+          }
         }
 
         const turnoutRow = await c.query<{ voted: string; total: string }>(

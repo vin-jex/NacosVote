@@ -12,6 +12,17 @@
 --   election_voters row, an IP, an email, or any other identifying value.
 
 -- ---------------------------------------------------------------------------
+-- Enum types (value domains)
+-- ---------------------------------------------------------------------------
+
+CREATE TYPE election_status AS ENUM ('draft', 'scheduled', 'open', 'closed');
+CREATE TYPE eligibility_mode AS ENUM ('restricted', 'open');
+CREATE TYPE ballot_mode AS ENUM ('secret', 'attributable');
+CREATE TYPE results_visibility AS ENUM ('private', 'on_close', 'live');
+CREATE TYPE email_kind AS ENUM ('vote_recorded', 'final_results');
+CREATE TYPE email_status AS ENUM ('pending', 'sent', 'failed');
+
+-- ---------------------------------------------------------------------------
 -- Core registry
 -- ---------------------------------------------------------------------------
 
@@ -28,25 +39,27 @@ CREATE TABLE elections (
   id            bigserial PRIMARY KEY,
   title         text NOT NULL CHECK (length(btrim(title)) > 0),
   description   text,
-  status        text NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft', 'scheduled', 'open', 'closed')),
+  status        election_status NOT NULL DEFAULT 'draft',
   voting_start  timestamptz,
   voting_end    timestamptz,
   version       integer NOT NULL DEFAULT 1,
   -- 'restricted': only voters on election_voters may vote (admin loads the list).
   -- 'open': anyone who gives a matric number + full name may vote; the identity
   --         is recorded (for later audit) and locked to that matric.
-  eligibility_mode text NOT NULL DEFAULT 'restricted'
-                   CHECK (eligibility_mode IN ('restricted', 'open')),
+  eligibility_mode eligibility_mode NOT NULL DEFAULT 'restricted',
   -- Optional hard cap on the number of ballots cast (enforced in the vote
   -- transaction under a per-election advisory lock). NULL = no cap.
   max_voters    integer CHECK (max_voters IS NULL OR max_voters > 0),
+  -- 'secret': the votes table is unlinkable to any voter (default).
+  -- 'attributable': ballots are stored in attributed_votes linked to the voter
+  --   so organisers can audit and invalidate individual ballots. Public and
+  --   voter-facing results still show totals only.
+  ballot_mode   ballot_mode NOT NULL DEFAULT 'secret',
   -- Public results visibility:
-  --   results_public = false          -> private (only admins)
-  --   results_public = true           -> aggregate tally is public once CLOSED
-  --   results_public + results_live   -> also public while voting is OPEN
-  results_public boolean NOT NULL DEFAULT false,
-  results_live   boolean NOT NULL DEFAULT false,
+  --   'private'  -> only admins
+  --   'on_close' -> aggregate tally is public once the election is CLOSED
+  --   'live'     -> also public while voting is OPEN
+  results_visibility results_visibility NOT NULL DEFAULT 'private',
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   -- end strictly after start (invariant: impossible windows rejected by the DB)
@@ -179,10 +192,10 @@ CREATE TABLE vote_idempotency (
 -- aggregate counts and titles.
 CREATE TABLE email_outbox (
   id          bigserial PRIMARY KEY,
-  kind        text NOT NULL CHECK (kind IN ('vote_recorded', 'final_results')),
+  kind        email_kind NOT NULL,
   election_id bigint NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
   payload     jsonb NOT NULL,
-  status      text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+  status      email_status NOT NULL DEFAULT 'pending',
   attempts    integer NOT NULL DEFAULT 0,
   last_error  text,
   created_at  timestamptz NOT NULL DEFAULT now(),

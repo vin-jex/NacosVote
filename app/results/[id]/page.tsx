@@ -33,7 +33,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const id = Number(params.id);
   const election = Number.isInteger(id) ? await getElection(id).catch(() => null) : null;
-  return { title: election && election.results_public ? `${election.title} results` : 'Results' };
+  return {
+    title:
+      election && election.results_visibility !== 'private'
+        ? `${election.title} results`
+        : 'Results',
+  };
 }
 
 export default async function PublicResultsPage({ params }: { params: { id: string } }) {
@@ -42,10 +47,10 @@ export default async function PublicResultsPage({ params }: { params: { id: stri
 
   const election = await getElection(id);
   // Not published => the page does not exist publicly.
-  if (!election || !election.results_public) notFound();
+  if (!election || election.results_visibility === 'private') notFound();
 
   const status = effectiveStatus(election);
-  const showTally = status === 'closed' || election.results_live;
+  const showTally = status === 'closed' || election.results_visibility === 'live';
 
   return (
     <main className="mx-auto w-full max-w-[680px]">

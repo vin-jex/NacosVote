@@ -56,6 +56,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         turnout: { ...turnout, notVoted: turnout.total - turnout.voted, percent },
         review: raw.review,
         official: raw.official,
+        attributable: raw.attributable,
         participation: {
           total: participationTotal,
           limit: limit ?? 50,

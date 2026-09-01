@@ -30,8 +30,8 @@ type Detail = {
   hasVotes: boolean;
   eligibilityMode: 'restricted' | 'open';
   maxVoters: number | null;
-  resultsPublic: boolean;
-  resultsLive: boolean;
+  resultsVisibility: 'private' | 'on_close' | 'live';
+  ballotMode: 'secret' | 'attributable';
   ballotsCast: number;
   ballot: Position[];
   turnout: { voted: number; total: number };
@@ -156,7 +156,10 @@ export default function ElectionDetail({ electionId }: { electionId: number }) {
           />
         )}
         {tab === 'results' && (
-          <ResultsTab electionId={electionId} resultsPublic={data.resultsPublic} />
+          <ResultsTab
+            electionId={electionId}
+            resultsPublic={data.resultsVisibility !== 'private'}
+          />
         )}
       </div>
     </>
@@ -172,8 +175,9 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
   const [mode, setMode] = useState<'restricted' | 'open'>(detail.eligibilityMode);
   const [maxVoters, setMaxVoters] = useState(detail.maxVoters != null ? String(detail.maxVoters) : '');
   const [resultsVis, setResultsVis] = useState<'private' | 'on_close' | 'live'>(
-    detail.resultsLive ? 'live' : detail.resultsPublic ? 'on_close' : 'private',
+    detail.resultsVisibility,
   );
+  const [ballotType, setBallotType] = useState<'secret' | 'attributable'>(detail.ballotMode);
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -326,6 +330,29 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
           </p>
         )}
 
+      <p className="position-title mt-8">Ballot type</p>
+      <hr className="rule mb-4 mt-2" />
+      <label htmlFor="s-ballot" className="field-label">
+        How ballots are stored
+      </label>
+      <select
+        id="s-ballot"
+        className="field-input"
+        value={ballotType}
+        disabled={detail.hasVotes}
+        onChange={(e) => setBallotType(e.target.value as 'secret' | 'attributable')}
+      >
+        <option value="secret">Secret (no one can see how anyone voted)</option>
+        <option value="attributable">Attributable (admins can see and invalidate each ballot)</option>
+      </select>
+      <p className="field-hint">
+        {detail.hasVotes
+          ? 'Locked: votes have already been cast.'
+          : 'Attributable stores each ballot linked to the voter, so organisers can audit it and ' +
+            'invalidate specific ones (for example a voter not on a confirmation list). Public results ' +
+            'still show totals only, never who voted for whom. This is NOT a secret ballot.'}
+      </p>
+
       <hr className="rule my-6" />
 
       <div className="flex flex-wrap gap-3">
@@ -339,8 +366,8 @@ function SettingsTab({ detail, reload }: { detail: Detail; reload: () => void })
               votingEnd: end ? new Date(end).toISOString() : null,
               eligibilityMode: mode,
               maxVoters: maxVoters.trim() === '' ? null : Math.max(1, Math.floor(Number(maxVoters))),
-              resultsPublic: resultsVis !== 'private',
-              resultsLive: resultsVis === 'live',
+              resultsVisibility: resultsVis,
+              ballotMode: ballotType,
             })
           }
         >
@@ -875,6 +902,7 @@ function ResultsTab({
       declarations: number;
       positions: { id: number; name: string; candidates: { id: number; name: string; votes: number }[] }[];
     } | null;
+    attributable: boolean;
     participation: {
       total: number;
       voters: {
@@ -883,11 +911,28 @@ function ResultsTab({
         name: string;
         voted: boolean;
         review: 'valid' | 'invalid' | null;
+        choice: string | null;
       }[];
     };
     generatedAt: string;
   }>(url, { pollMs: 15_000 });
   const [busy, setBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState<number | null>(null);
+
+  async function setValidity(voterId: number, invalid: boolean) {
+    setRowBusy(voterId);
+    const res = await apiFetch<{ ok: true }>(
+      `/api/admin/elections/${electionId}/voters/${voterId}/validity`,
+      { method: 'POST', body: JSON.stringify({ invalid }) },
+    );
+    setRowBusy(null);
+    if (res.ok) {
+      ok(invalid ? 'Ballot invalidated.' : 'Ballot restored.');
+      reload();
+    } else {
+      err(res.message);
+    }
+  }
 
   async function notify() {
     setBusy(true);
@@ -984,7 +1029,9 @@ function ResultsTab({
               <th className="py-2 pr-3 font-semibold">Matric</th>
               <th className="py-2 pr-3 font-semibold">Name</th>
               <th className="py-2 pr-3 font-semibold">Status</th>
-              <th className="py-2 font-semibold">Review</th>
+              <th className="py-2 pr-3 font-semibold">Review</th>
+              {data.attributable && <th className="py-2 pr-3 font-semibold">Choice</th>}
+              {data.attributable && <th className="py-2 font-semibold">Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -993,7 +1040,7 @@ function ResultsTab({
                 <td className="py-2 pr-3">{v.matric_number}</td>
                 <td className="py-2 pr-3">{v.name}</td>
                 <td className="py-2 pr-3">{v.voted ? 'Voted' : 'Not voted'}</td>
-                <td className="py-2">
+                <td className="py-2 pr-3">
                   {v.review === 'valid' ? (
                     <span className="font-semibold text-accent">Valid</span>
                   ) : v.review === 'invalid' ? (
@@ -1002,13 +1049,34 @@ function ResultsTab({
                     <span className="text-ink/40">not reviewed</span>
                   )}
                 </td>
+                {data.attributable && (
+                  <td className="py-2 pr-3">{v.choice ?? <span className="text-ink/40">no ballot</span>}</td>
+                )}
+                {data.attributable && (
+                  <td className="py-2">
+                    {v.voted && (
+                      <button
+                        type="button"
+                        className="btn-secondary min-h-[36px] px-3"
+                        disabled={rowBusy === v.id}
+                        onClick={() => setValidity(v.id, v.review !== 'invalid')}
+                      >
+                        <span>{v.review === 'invalid' ? 'Restore' : 'Invalidate'}</span>
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <Pager offset={offset} page={PAGE} total={data.participation.total} onPage={setOffset} />
-      <p className="field-hint">This list never shows how anyone voted.</p>
+      <p className="field-hint">
+        {data.attributable
+          ? 'This election uses an attributable ballot: organisers can see and invalidate individual ballots here. Voters and public results only ever see totals.'
+          : 'This list never shows how anyone voted.'}
+      </p>
 
       <hr className="rule my-6" />
       <div className="flex flex-wrap items-center gap-4">

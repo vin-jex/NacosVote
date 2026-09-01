@@ -48,8 +48,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         hasVotes,
         eligibilityMode: election.eligibility_mode,
         maxVoters: election.max_voters,
-        resultsPublic: election.results_public,
-        resultsLive: election.results_live,
+        resultsVisibility: election.results_visibility,
+        ballotMode: election.ballot_mode,
         ballotsCast: turnout.voted,
         ballot,
         turnout,
@@ -76,8 +76,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (body.votingEnd !== undefined) patch.voting_end = body.votingEnd ?? null;
     if (body.eligibilityMode !== undefined) patch.eligibility_mode = body.eligibilityMode;
     if (body.maxVoters !== undefined) patch.max_voters = body.maxVoters ?? null;
-    if (body.resultsPublic !== undefined) patch.results_public = body.resultsPublic;
-    if (body.resultsLive !== undefined) patch.results_live = body.resultsLive;
+    if (body.resultsVisibility !== undefined) patch.results_visibility = body.resultsVisibility;
+    if (body.ballotMode !== undefined && body.ballotMode !== current.ballot_mode) {
+      if (await electionHasVotes(id)) {
+        throw new ApiError(
+          'ELECTION_LOCKED',
+          409,
+          'The ballot type cannot change once votes have been cast.',
+        );
+      }
+      patch.ballot_mode = body.ballotMode;
+    }
 
     if (body.status !== undefined && body.status !== current.status) {
       if (!canTransition(current.status, body.status)) {
