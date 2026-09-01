@@ -660,6 +660,25 @@ export async function getTurnout(electionId: number): Promise<Turnout> {
   return { voted: Number(rows[0].voted), total: Number(rows[0].total) };
 }
 
+export type ReviewCounts = { confirmedValid: number; invalidated: number; unreviewed: number };
+
+/** Post-vote review status of the ballots cast (from the confirmation list). */
+export async function getReviewCounts(electionId: number): Promise<ReviewCounts> {
+  const { rows } = await pool.query<{ c: string; i: string; u: string }>(
+    `SELECT
+       count(*) FILTER (WHERE confirmed_valid)                          AS c,
+       count(*) FILTER (WHERE invalidated)                              AS i,
+       count(*) FILTER (WHERE has_voted AND NOT confirmed_valid AND NOT invalidated) AS u
+     FROM election_voters WHERE election_id = $1`,
+    [electionId],
+  );
+  return {
+    confirmedValid: Number(rows[0].c),
+    invalidated: Number(rows[0].i),
+    unreviewed: Number(rows[0].u),
+  };
+}
+
 /**
  * Aggregate results only: per-position candidate counts + turnout. No
  * participation list, no names or matric numbers. Safe to expose publicly.
@@ -667,6 +686,7 @@ export async function getTurnout(electionId: number): Promise<Turnout> {
 export async function getPublicResults(electionId: number): Promise<{
   positions: ResultsPosition[];
   turnout: Turnout & { percent: number };
+  review: ReviewCounts;
 } | null> {
   const el = await getElection(electionId);
   if (!el) return null;
@@ -707,8 +727,9 @@ export async function getPublicResults(electionId: number): Promise<{
   const total =
     el.eligibility_mode === 'open' ? (el.max_voters ?? raw.voted) : raw.total;
   const percent = total === 0 ? 0 : (raw.voted / total) * 100;
+  const review = await getReviewCounts(electionId);
 
-  return { positions: [...byId.values()], turnout: { voted: raw.voted, total, percent } };
+  return { positions: [...byId.values()], turnout: { voted: raw.voted, total, percent }, review };
 }
 
 /**
@@ -740,7 +761,14 @@ export async function getResults(
 ): Promise<{
   positions: ResultsPosition[];
   turnout: Turnout;
-  voters: { id: number; matric_number: string; name: string; voted: boolean }[];
+  review: ReviewCounts;
+  voters: {
+    id: number;
+    matric_number: string;
+    name: string;
+    voted: boolean;
+    review: 'valid' | 'invalid' | null;
+  }[];
   participationTotal: number;
 }> {
   const { rows } = await pool.query<{
@@ -790,8 +818,10 @@ export async function getResults(
     matric_number: string;
     name: string;
     has_voted: boolean;
+    confirmed_valid: boolean;
+    invalidated: boolean;
   }>(
-    `SELECT v.id, v.matric_number, v.name, ev.has_voted
+    `SELECT v.id, v.matric_number, v.name, ev.has_voted, ev.confirmed_valid, ev.invalidated
      FROM election_voters ev JOIN voters v ON v.id = ev.voter_id
      WHERE ev.election_id = $1${filter}
      ORDER BY v.name
@@ -807,12 +837,14 @@ export async function getResults(
   return {
     positions: [...byId.values()],
     turnout,
+    review: await getReviewCounts(electionId),
     participationTotal: Number(totalRes.rows[0].count),
     voters: voterRows.map((v) => ({
       id: v.id,
       matric_number: v.matric_number,
       name: v.name,
       voted: v.has_voted,
+      review: v.confirmed_valid ? ('valid' as const) : v.invalidated ? ('invalid' as const) : null,
     })),
   };
 }

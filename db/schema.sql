@@ -90,9 +90,30 @@ CREATE TABLE election_voters (
   voter_id    bigint NOT NULL REFERENCES voters(id) ON DELETE CASCADE,
   has_voted   boolean NOT NULL DEFAULT false,
   voted_at    timestamptz,
+  -- Post-vote review against an organiser confirmation list (open-mode
+  -- elections). Advisory: flags the participant, never a ballot, so it adjusts
+  -- valid-count reporting but cannot change candidate totals (secret ballot).
+  confirmed_valid boolean NOT NULL DEFAULT false,
+  confirmed_at    timestamptz,
+  invalidated     boolean NOT NULL DEFAULT false,
+  invalid_reason  text,
+  invalidated_at  timestamptz,
   PRIMARY KEY (election_id, voter_id),
   CONSTRAINT election_voters_voted_at_consistent CHECK (has_voted = (voted_at IS NOT NULL))
 );
+
+-- Optional: the "I voted" confirmation list organisers collect out of band for
+-- an open-mode election. Same class of data as election_voters (who took part),
+-- never linked to a votes row.
+CREATE TABLE vote_confirmations (
+  id            bigserial PRIMARY KEY,
+  election_id   bigint NOT NULL REFERENCES elections(id) ON DELETE CASCADE,
+  name          text NOT NULL,
+  matric_number text,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX vote_confirmations_matric_uq
+  ON vote_confirmations (election_id, matric_number) WHERE matric_number IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- The ballot box
