@@ -5,18 +5,25 @@ import { getElection, getPublicResults } from '@/lib/queries';
 import { effectiveStatus } from '@/lib/election';
 import { Brand } from '@/app/components/brand';
 import { StatusBadge } from '@/app/components/ui';
+import { ReviewSummary } from '@/app/components/review-summary';
 
 export const dynamic = 'force-dynamic';
 
-const DT = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-} as const;
-const fmt = (d: Date | null) => (d ? new Date(d).toLocaleString(undefined, DT) : 'not set');
+// Server-rendered: pin to a fixed zone (WAT by default) with a label so it does
+// not show the server's UTC clock. Override with DISPLAY_TIMEZONE.
+const TZ = process.env.DISPLAY_TIMEZONE || 'Africa/Lagos';
+const fmt = (d: Date | null) =>
+  d
+    ? `${new Date(d).toLocaleString('en-US', {
+        timeZone: TZ,
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })} (${TZ})`
+    : 'not set';
 
 export async function generateMetadata({
   params,
@@ -95,6 +102,8 @@ async function Results({ id }: { id: number }) {
         {data.turnout.voted} of {data.turnout.total}
       </p>
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
+
+      <ReviewSummary review={data.review} ballots={data.turnout.voted} />
 
       {noVotes ? (
         <div className="mt-6 border-y border-line py-8 text-center">

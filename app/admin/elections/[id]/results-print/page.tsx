@@ -5,20 +5,25 @@ import { getElection, getPublicResults } from '@/lib/queries';
 import { effectiveStatus } from '@/lib/election';
 import { Brand } from '@/app/components/brand';
 import { StatusBadge } from '@/app/components/ui';
+import { ReviewSummary } from '@/app/components/review-summary';
 import PrintButton from '@/app/components/print-button';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Printable results' };
 
-const DT = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-} as const;
-const fmt = (d: Date | null) => (d ? new Date(d).toLocaleString(undefined, DT) : 'not set');
+const TZ = process.env.DISPLAY_TIMEZONE || 'Africa/Lagos';
+const fmt = (d: Date | null) =>
+  d
+    ? `${new Date(d).toLocaleString('en-US', {
+        timeZone: TZ,
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })} (${TZ})`
+    : 'not set';
 
 export default async function PrintableResults({ params }: { params: { id: string } }) {
   await requireAdminPage();
@@ -53,6 +58,8 @@ export default async function PrintableResults({ params }: { params: { id: strin
         {data.turnout.voted} of {data.turnout.total}
       </p>
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
+
+      <ReviewSummary review={data.review} ballots={data.turnout.voted} />
 
       {data.positions.every((p) => p.candidates.every((c) => c.votes === 0)) ? (
         <p className="section-title mt-6">No votes were recorded.</p>

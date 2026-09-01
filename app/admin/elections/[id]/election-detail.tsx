@@ -11,6 +11,7 @@ import {
   SkeletonRows,
 } from '@/app/components/states';
 import { Button, MessageBlock, StatusBadge } from '@/app/components/ui';
+import { ReviewSummary } from '@/app/components/review-summary';
 import Link from 'next/link';
 
 type Candidate = { id: number; name: string };
@@ -868,9 +869,16 @@ function ResultsTab({
       candidates: { id: number; name: string; votes: number }[];
     }[];
     turnout: { voted: number; total: number; notVoted: number; percent: number };
+    review: { confirmedValid: number; invalidated: number; unreviewed: number };
     participation: {
       total: number;
-      voters: { id: number; matric_number: string; name: string; voted: boolean }[];
+      voters: {
+        id: number;
+        matric_number: string;
+        name: string;
+        voted: boolean;
+        review: 'valid' | 'invalid' | null;
+      }[];
     };
     generatedAt: string;
   }>(url, { pollMs: 15_000 });
@@ -916,6 +924,8 @@ function ResultsTab({
         </div>
         <RefreshNote refreshing={refreshing} error={error} onRetry={reload} />
       </div>
+
+      <ReviewSummary review={data.review} ballots={data.turnout.voted} />
 
       <p className="position-title mt-8">Results</p>
       <hr className="rule mb-2 mt-2" />
@@ -964,7 +974,8 @@ function ResultsTab({
             <tr className="text-left text-ink/60">
               <th className="py-2 pr-3 font-semibold">Matric</th>
               <th className="py-2 pr-3 font-semibold">Name</th>
-              <th className="py-2 font-semibold">Status</th>
+              <th className="py-2 pr-3 font-semibold">Status</th>
+              <th className="py-2 font-semibold">Review</th>
             </tr>
           </thead>
           <tbody>
@@ -972,7 +983,16 @@ function ResultsTab({
               <tr key={v.id} className="border-t border-line">
                 <td className="py-2 pr-3">{v.matric_number}</td>
                 <td className="py-2 pr-3">{v.name}</td>
-                <td className="py-2">{v.voted ? 'Voted' : 'Not voted'}</td>
+                <td className="py-2 pr-3">{v.voted ? 'Voted' : 'Not voted'}</td>
+                <td className="py-2">
+                  {v.review === 'valid' ? (
+                    <span className="font-semibold text-accent">Valid</span>
+                  ) : v.review === 'invalid' ? (
+                    <span className="font-semibold text-danger">Invalid</span>
+                  ) : (
+                    <span className="text-ink/40">not reviewed</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
