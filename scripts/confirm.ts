@@ -20,6 +20,7 @@ import { normalizeMatric } from '../lib/normalize';
  *   pnpm tsx scripts/confirm.ts add <electionId> "Full Name" [regNo]
  *   pnpm tsx scripts/confirm.ts list <electionId>
  *   pnpm tsx scripts/confirm.ts reconcile <electionId>
+ *   pnpm tsx scripts/confirm.ts confirm <electionId> [--yes]                  # mark matched participants confirmed-valid
  *   pnpm tsx scripts/confirm.ts apply <electionId> [--yes] [--reason "..."]   # flag unmatched voters invalid
  *   pnpm tsx scripts/confirm.ts validate <electionId> <regNo|"Full Name">     # clear the invalid flag
  */
@@ -57,7 +58,13 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-type Voter = { voter_id: number; matric_number: string; name: string; invalidated: boolean };
+type Voter = {
+  voter_id: number;
+  matric_number: string;
+  name: string;
+  invalidated: boolean;
+  confirmed_valid: boolean;
+};
 type Conf = { matric_number: string | null; name: string };
 
 function classify(voters: Voter[], confs: Conf[]) {
@@ -88,7 +95,7 @@ async function main() {
   const reason = reasonIdx >= 0 ? argv[reasonIdx + 1] : 'not on confirmation list';
   const electionId = Number(idArg);
   if (!cmd || !Number.isInteger(electionId)) {
-    console.error('Usage: pnpm tsx scripts/confirm.ts <import|add|list|reconcile|apply|validate> <electionId> ...');
+    console.error('Usage: pnpm tsx scripts/confirm.ts <import|add|list|reconcile|confirm|apply|validate> <electionId> ...');
     process.exit(1);
   }
 
@@ -97,7 +104,7 @@ async function main() {
     const loadVoters = async (): Promise<Voter[]> =>
       (
         await pool.query<Voter>(
-          `SELECT v.id AS voter_id, v.matric_number, v.name, ev.invalidated
+          `SELECT v.id AS voter_id, v.matric_number, v.name, ev.invalidated, ev.confirmed_valid
            FROM election_voters ev JOIN voters v ON v.id = ev.voter_id
            WHERE ev.election_id = $1 AND ev.has_voted = true
            ORDER BY v.name`,
@@ -159,6 +166,33 @@ async function main() {
       console.log(`\n  On the list but NO vote record: ${unusedConfs.length}`);
       unusedConfs.forEach((c) => console.log(`    ! ${c.name}  ${c.matric_number ?? '(no reg no)'}`));
       console.log('');
+    } else if (cmd === 'confirm') {
+      const voters = await loadVoters();
+      const confs = await loadConfs();
+      const { matched } = classify(voters, confs);
+      const toConfirm = matched.filter((v) => !v.confirmed_valid);
+      console.log(`Would mark CONFIRMED VALID: ${toConfirm.length} participant(s) (voted and on the list).`);
+      toConfirm.forEach((v) => console.log(`  + ${v.name}  ${v.matric_number}`));
+      if (!flags.has('--yes')) {
+        console.log('\nDry run. Re-run with --yes to apply.');
+      } else {
+        for (const v of toConfirm) {
+          await pool.query(
+            `UPDATE election_voters
+             SET confirmed_valid = true, confirmed_at = now(),
+                 invalidated = false, invalid_reason = NULL, invalidated_at = NULL
+             WHERE election_id = $1 AND voter_id = $2`,
+            [electionId, v.voter_id],
+          );
+        }
+        const tot = (
+          await pool.query<{ n: string }>(
+            `SELECT count(*) n FROM election_voters WHERE election_id = $1 AND confirmed_valid = true`,
+            [electionId],
+          )
+        ).rows[0].n;
+        console.log(`\nConfirmed ${toConfirm.length} this run. ${tot} participant(s) now confirmed valid.`);
+      }
     } else if (cmd === 'apply') {
       const voters = await loadVoters();
       const confs = await loadConfs();
