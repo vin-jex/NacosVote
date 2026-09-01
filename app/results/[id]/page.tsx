@@ -104,12 +104,7 @@ async function Results({ id }: { id: number }) {
       </p>
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
 
-      {/* Post-vote review context only appears publicly when it changes the
-          headline result (an official declared-choice tally, or flagged
-          ballots). A plain confirmation reconciliation stays admin-only. */}
-      {(data.official || data.review.invalidated > 0) && (
-        <ReviewSummary review={data.review} ballots={data.turnout.voted} />
-      )}
+      <ReviewSummary review={data.review} ballots={data.turnout.voted} />
 
       {data.official && <OfficialResult official={data.official} />}
 
