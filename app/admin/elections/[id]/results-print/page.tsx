@@ -60,7 +60,9 @@ export default async function PrintableResults({ params }: { params: { id: strin
       </p>
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
 
-      <ReviewSummary review={data.review} ballots={data.turnout.voted} />
+      {(data.official || data.review.invalidated > 0) && (
+        <ReviewSummary review={data.review} ballots={data.turnout.voted} />
+      )}
 
       {data.official && <OfficialResult official={data.official} />}
       {data.official && (
