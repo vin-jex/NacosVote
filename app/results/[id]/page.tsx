@@ -6,6 +6,7 @@ import { effectiveStatus } from '@/lib/election';
 import { Brand } from '@/app/components/brand';
 import { StatusBadge } from '@/app/components/ui';
 import { ReviewSummary } from '@/app/components/review-summary';
+import { OfficialResult } from '@/app/components/official-result';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,6 +105,12 @@ async function Results({ id }: { id: number }) {
       <p className="meta tabular-nums">{data.turnout.percent.toFixed(1)}% voted</p>
 
       <ReviewSummary review={data.review} ballots={data.turnout.voted} />
+
+      {data.official && <OfficialResult official={data.official} />}
+
+      {data.official && (
+        <p className="kicker mt-10 text-ink/50">Ballot-box tally (anonymous, for audit)</p>
+      )}
 
       {noVotes ? (
         <div className="mt-6 border-y border-line py-8 text-center">

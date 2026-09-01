@@ -12,6 +12,7 @@ import {
 } from '@/app/components/states';
 import { Button, MessageBlock, StatusBadge } from '@/app/components/ui';
 import { ReviewSummary } from '@/app/components/review-summary';
+import { OfficialResult } from '@/app/components/official-result';
 import Link from 'next/link';
 
 type Candidate = { id: number; name: string };
@@ -870,6 +871,10 @@ function ResultsTab({
     }[];
     turnout: { voted: number; total: number; notVoted: number; percent: number };
     review: { confirmedValid: number; invalidated: number; unreviewed: number };
+    official: {
+      declarations: number;
+      positions: { id: number; name: string; candidates: { id: number; name: string; votes: number }[] }[];
+    } | null;
     participation: {
       total: number;
       voters: {
@@ -927,7 +932,11 @@ function ResultsTab({
 
       <ReviewSummary review={data.review} ballots={data.turnout.voted} />
 
-      <p className="position-title mt-8">Results</p>
+      {data.official && <OfficialResult official={data.official} />}
+
+      <p className="position-title mt-8">
+        {data.official ? 'Ballot-box tally (anonymous, for audit)' : 'Results'}
+      </p>
       <hr className="rule mb-2 mt-2" />
 
       {noVotes ? (

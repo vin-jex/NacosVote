@@ -662,6 +662,63 @@ export async function getTurnout(electionId: number): Promise<Turnout> {
 
 export type ReviewCounts = { confirmedValid: number; invalidated: number; unreviewed: number };
 
+export type OfficialTally = {
+  positions: { id: number; name: string; candidates: { id: number; name: string; votes: number }[] }[];
+  declarations: number; // distinct confirmed-valid people who declared a choice
+};
+
+/**
+ * Official tally built from declared choices of CONFIRMED-VALID stakeholders
+ * only. Returns null when no such declarations exist. Zero-vote candidates are
+ * included.
+ */
+export async function getDeclarationTally(electionId: number): Promise<OfficialTally | null> {
+  const { rows } = await pool.query<{
+    position_id: number;
+    position_name: string;
+    candidate_id: number | null;
+    candidate_name: string | null;
+    votes: string;
+  }>(
+    `SELECT p.id AS position_id, p.name AS position_name,
+            c.id AS candidate_id, c.name AS candidate_name,
+            count(d.id) FILTER (WHERE vc.confirmed_valid) AS votes
+     FROM election_positions ep
+     JOIN positions p ON p.id = ep.position_id
+     LEFT JOIN candidates c ON c.position_id = p.id
+     LEFT JOIN vote_declarations d
+       ON d.candidate_id = c.id AND d.election_id = ep.election_id
+     LEFT JOIN vote_confirmations vc ON vc.id = d.confirmation_id
+     WHERE ep.election_id = $1
+     GROUP BY ep.display_order, p.id, p.name, c.id, c.name, c.display_order
+     ORDER BY ep.display_order, p.id, c.display_order, c.id`,
+    [electionId],
+  );
+
+  const declared = await pool.query<{ n: string }>(
+    `SELECT count(DISTINCT d.confirmation_id) AS n
+     FROM vote_declarations d
+     JOIN vote_confirmations vc ON vc.id = d.confirmation_id AND vc.confirmed_valid = true
+     WHERE d.election_id = $1`,
+    [electionId],
+  );
+  const declarations = Number(declared.rows[0].n);
+  if (declarations === 0) return null;
+
+  const byId = new Map<number, OfficialTally['positions'][number]>();
+  for (const r of rows) {
+    let pos = byId.get(r.position_id);
+    if (!pos) {
+      pos = { id: r.position_id, name: r.position_name, candidates: [] };
+      byId.set(r.position_id, pos);
+    }
+    if (r.candidate_id != null) {
+      pos.candidates.push({ id: r.candidate_id, name: r.candidate_name!, votes: Number(r.votes) });
+    }
+  }
+  return { positions: [...byId.values()], declarations };
+}
+
 /** Post-vote review status of the ballots cast (from the confirmation list). */
 export async function getReviewCounts(electionId: number): Promise<ReviewCounts> {
   const { rows } = await pool.query<{ c: string; i: string; u: string }>(
@@ -687,6 +744,7 @@ export async function getPublicResults(electionId: number): Promise<{
   positions: ResultsPosition[];
   turnout: Turnout & { percent: number };
   review: ReviewCounts;
+  official: OfficialTally | null;
 } | null> {
   const el = await getElection(electionId);
   if (!el) return null;
@@ -728,8 +786,14 @@ export async function getPublicResults(electionId: number): Promise<{
     el.eligibility_mode === 'open' ? (el.max_voters ?? raw.voted) : raw.total;
   const percent = total === 0 ? 0 : (raw.voted / total) * 100;
   const review = await getReviewCounts(electionId);
+  const official = await getDeclarationTally(electionId);
 
-  return { positions: [...byId.values()], turnout: { voted: raw.voted, total, percent }, review };
+  return {
+    positions: [...byId.values()],
+    turnout: { voted: raw.voted, total, percent },
+    review,
+    official,
+  };
 }
 
 /**
@@ -762,6 +826,7 @@ export async function getResults(
   positions: ResultsPosition[];
   turnout: Turnout;
   review: ReviewCounts;
+  official: OfficialTally | null;
   voters: {
     id: number;
     matric_number: string;
@@ -838,6 +903,7 @@ export async function getResults(
     positions: [...byId.values()],
     turnout,
     review: await getReviewCounts(electionId),
+    official: await getDeclarationTally(electionId),
     participationTotal: Number(totalRes.rows[0].count),
     voters: voterRows.map((v) => ({
       id: v.id,
